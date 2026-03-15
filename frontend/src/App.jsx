@@ -1,7 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { getAllHabits, createHabit, updateHabit, deleteHabit } from "./services/habitApi.js";
 import { getContributions, logContribution } from "./services/contributionApi.js";
-import { getAllUnits } from "./services/unitApi.js";
+import { getAllUnits, createUnit, deleteUnit } from "./services/unitApi.js";
+import { getIntegrations, updateIntegration } from "./services/integrationApi.js";
+import { syncStrava, syncGitHub } from "./services/syncApi.js";
 import { COLORS, getColor } from "./constants/colors.js";
 import { EMOJI_OPTIONS, DAYS_LABELS, MONTHS } from "./constants/defaults.js";
 import {
@@ -13,6 +15,23 @@ import {
   modalBox,
   cancelBtn,
   deleteBtn,
+  gearButton,
+  settingsOverlay,
+  settingsPanel,
+  settingsHeader,
+  tabBar,
+  tabButton,
+  tabButtonActive,
+  integrationCard,
+  statusBadgeConnected,
+  statusBadgeDisconnected,
+  syncButton,
+  connectButton,
+  unitRow,
+  unitForm,
+  toastContainer,
+  toastSuccess,
+  toastError,
 } from "./constants/styles.js";
 
 function getDateKey(date) {
@@ -421,28 +440,289 @@ function ConfirmModal({ message, onConfirm, onCancel }) {
   );
 }
 
+function Toast({ message, type, onDismiss }) {
+  useEffect(() => {
+    const timer = setTimeout(onDismiss, 4000);
+    return () => clearTimeout(timer);
+  }, [onDismiss]);
 
+  const style = type === "success" ? toastSuccess : toastError;
+  return (
+    <div style={toastContainer}>
+      <div style={style}>
+        {message}
+        <button onClick={onDismiss} style={{
+          marginLeft: 12, background: "none", border: "none",
+          color: "inherit", cursor: "pointer", fontSize: 16,
+        }}>{"\u2715"}</button>
+      </div>
+    </div>
+  );
+}
+
+function IntegrationCard({ integration, type, habits, syncing, onSync, onLinkHabit }) {
+  const isStrava = type === "strava";
+  const isConnected = integration && integration.status === "connected";
+  const isSyncing = syncing[type] || false;
+  const linkedHabitId = integration?.habit_id || "";
+
+  const handleConnect = () => {
+    const baseUrl = import.meta.env.VITE_API_URL || "/api";
+    window.location.href = baseUrl + "/auth/strava";
+  };
+
+  const lastSync = integration?.last_synced_at
+    ? new Date(integration.last_synced_at).toLocaleDateString("es-AR", {
+        day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
+      })
+    : null;
+
+  return (
+    <div style={integrationCard}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 22 }}>{isStrava ? "\uD83C\uDFC3" : "\uD83D\uDCBB"}</span>
+          <span style={{ fontSize: 16, fontWeight: 600, color: "#e6edf3", fontFamily: "'JetBrains Mono', monospace" }}>
+            {isStrava ? "Strava" : "GitHub"}
+          </span>
+        </div>
+        {isConnected ? (
+          <span style={statusBadgeConnected}>Conectado</span>
+        ) : (
+          <span style={statusBadgeDisconnected}>Desconectado</span>
+        )}
+      </div>
+
+      {isStrava && !isConnected && (
+        <button onClick={handleConnect} style={connectButton}>
+          {"Conectar con Strava"}
+        </button>
+      )}
+
+      {(isConnected || !isStrava) && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <label style={{ fontSize: 13, color: "#8b949e", fontFamily: "'DM Sans', sans-serif", whiteSpace: "nowrap" }}>
+              {"H\u00e1bito vinculado:"}
+            </label>
+            <select
+              value={linkedHabitId}
+              onChange={e => onLinkHabit(type, e.target.value ? Number(e.target.value) : null)}
+              style={{
+                ...inputStyle,
+                marginBottom: 0,
+                flex: 1,
+                appearance: "auto",
+              }}
+            >
+              <option value="">Sin vincular</option>
+              {habits.map(h => (
+                <option key={h.id} value={h.id}>
+                  {h.emoji} {h.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {lastSync && (
+            <span style={{ fontSize: 12, color: "rgba(255,255,255,0.3)", fontFamily: "'JetBrains Mono', monospace" }}>
+              {"\u00DAltima sync: " + lastSync}
+            </span>
+          )}
+
+          <button
+            onClick={onSync}
+            disabled={isSyncing || !linkedHabitId}
+            style={{
+              ...syncButton,
+              opacity: isSyncing || !linkedHabitId ? 0.5 : 1,
+              cursor: isSyncing || !linkedHabitId ? "default" : "pointer",
+              alignSelf: "flex-start",
+            }}
+          >
+            {isSyncing ? "Sincronizando..." : "Sincronizar"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function IntegrationsSection({ habits, integrations, syncing, onSyncStrava, onSyncGithub, onLinkHabit }) {
+  const stravaIntegration = integrations.find(i => i.id === "strava") || null;
+  const githubIntegration = integrations.find(i => i.id === "github") || null;
+
+  return (
+    <div>
+      <IntegrationCard
+        integration={stravaIntegration}
+        type="strava"
+        habits={habits}
+        syncing={syncing}
+        onSync={onSyncStrava}
+        onLinkHabit={onLinkHabit}
+      />
+      <IntegrationCard
+        integration={githubIntegration}
+        type="github"
+        habits={habits}
+        syncing={syncing}
+        onSync={onSyncGithub}
+        onLinkHabit={onLinkHabit}
+      />
+    </div>
+  );
+}
+
+function UnitsSection({ units, onCreateUnit, onDeleteUnit }) {
+  const [name, setName] = useState("");
+  const [abbreviation, setAbbreviation] = useState("");
+
+  const handleSubmit = () => {
+    if (!name.trim() || !abbreviation.trim()) return;
+    onCreateUnit({ name: name.trim(), abbreviation: abbreviation.trim() });
+    setName("");
+    setAbbreviation("");
+  };
+
+  const predefined = units.filter(u => u.is_predefined);
+  const custom = units.filter(u => !u.is_predefined);
+
+  return (
+    <div>
+      {predefined.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <span style={{ fontSize: 12, color: "rgba(255,255,255,0.3)", fontFamily: "'JetBrains Mono', monospace", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+            Predefinidas
+          </span>
+          {predefined.map(u => (
+            <div key={u.id} style={unitRow}>
+              <span style={{ color: "#e6edf3", fontSize: 14, fontFamily: "'DM Sans', sans-serif" }}>
+                {u.name} <span style={{ color: "#8b949e" }}>({u.abbreviation})</span>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {custom.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <span style={{ fontSize: 12, color: "rgba(255,255,255,0.3)", fontFamily: "'JetBrains Mono', monospace", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+            Personalizadas
+          </span>
+          {custom.map(u => (
+            <div key={u.id} style={unitRow}>
+              <span style={{ color: "#e6edf3", fontSize: 14, fontFamily: "'DM Sans', sans-serif" }}>
+                {u.name} <span style={{ color: "#8b949e" }}>({u.abbreviation})</span>
+              </span>
+              <button
+                onClick={() => onDeleteUnit(u.id)}
+                style={{ ...smallBtn, fontSize: 14, color: "#f85149" }}
+              >{"\uD83D\uDDD1\uFE0F"}</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={unitForm}>
+        <input
+          value={name}
+          onChange={e => setName(e.target.value)}
+          placeholder="Nombre"
+          style={{ ...inputStyle, marginBottom: 0, flex: 2 }}
+        />
+        <input
+          value={abbreviation}
+          onChange={e => setAbbreviation(e.target.value)}
+          placeholder="Abrev."
+          onKeyDown={e => e.key === "Enter" && handleSubmit()}
+          style={{ ...inputStyle, marginBottom: 0, flex: 1 }}
+        />
+        <button
+          onClick={handleSubmit}
+          disabled={!name.trim() || !abbreviation.trim()}
+          style={{
+            ...connectButton,
+            opacity: name.trim() && abbreviation.trim() ? 1 : 0.4,
+            cursor: name.trim() && abbreviation.trim() ? "pointer" : "default",
+            whiteSpace: "nowrap",
+          }}
+        >{"Crear"}</button>
+      </div>
+    </div>
+  );
+}
+
+function SettingsPanel({ habits, units, integrations, syncing, onClose, onSyncStrava, onSyncGithub, onLinkHabit, onCreateUnit, onDeleteUnit }) {
+  const [activeTab, setActiveTab] = useState("integraciones");
+
+  return (
+    <div style={settingsOverlay} onClick={onClose}>
+      <div style={settingsPanel} onClick={e => e.stopPropagation()}>
+        <div style={settingsHeader}>
+          <h2 style={{ margin: 0, color: "#e6edf3", fontSize: 20, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>
+            {"Configuraci\u00f3n"}
+          </h2>
+          <button onClick={onClose} style={{ ...smallBtn, fontSize: 18 }}>{"\u2715"}</button>
+        </div>
+        <div style={tabBar}>
+          <button
+            style={activeTab === "integraciones" ? tabButtonActive : tabButton}
+            onClick={() => setActiveTab("integraciones")}
+          >Integraciones</button>
+          <button
+            style={activeTab === "unidades" ? tabButtonActive : tabButton}
+            onClick={() => setActiveTab("unidades")}
+          >Unidades</button>
+        </div>
+        {activeTab === "integraciones" && (
+          <IntegrationsSection
+            habits={habits}
+            integrations={integrations}
+            syncing={syncing}
+            onSyncStrava={onSyncStrava}
+            onSyncGithub={onSyncGithub}
+            onLinkHabit={onLinkHabit}
+          />
+        )}
+        {activeTab === "unidades" && (
+          <UnitsSection
+            units={units}
+            onCreateUnit={onCreateUnit}
+            onDeleteUnit={onDeleteUnit}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default function HabitTracker() {
   const [habits, setHabits] = useState([]);
   const [contributions, setContributions] = useState({});
   const [units, setUnits] = useState([]);
+  const [integrations, setIntegrations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [editingHabit, setEditingHabit] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [toast, setToast] = useState(null);
+  const [syncing, setSyncing] = useState({});
 
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [habitsData, unitsData] = await Promise.all([
+        const [habitsData, unitsData, integrationsData] = await Promise.all([
           getAllHabits(),
           getAllUnits(),
+          getIntegrations().catch(() => []),
         ]);
 
         setHabits(habitsData);
         setUnits(unitsData);
+        setIntegrations(integrationsData);
 
         // Compute date range for contributions fetch
         const days = getDaysInRange(20);
@@ -473,6 +753,109 @@ export default function HabitTracker() {
 
     loadData();
   }, []);
+
+  // T5: Detect ?strava=connected URL param on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const stravaStatus = params.get("strava");
+    if (stravaStatus === "connected") {
+      setToast({ message: "\u00A1Strava conectado exitosamente!", type: "success" });
+      window.history.replaceState({}, "", window.location.pathname);
+      getIntegrations().then(setIntegrations).catch(console.error);
+    } else if (stravaStatus === "error") {
+      setToast({ message: "Error al conectar con Strava", type: "error" });
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
+
+  const refreshData = useCallback(async () => {
+    try {
+      const [habitsData, unitsData, integrationsData] = await Promise.all([
+        getAllHabits(),
+        getAllUnits(),
+        getIntegrations().catch(() => []),
+      ]);
+      setHabits(habitsData);
+      setUnits(unitsData);
+      setIntegrations(integrationsData);
+
+      const days = getDaysInRange(20);
+      const fromDate = getDateKey(days[0]);
+      const toDate = getDateKey(days[days.length - 1]);
+      const contribEntries = await Promise.all(
+        habitsData.map(async (h) => {
+          const raw = await getContributions(h.id, fromDate, toDate);
+          return [h.id, sumContributionsByDate(raw)];
+        })
+      );
+      const contribs = {};
+      for (const [id, data] of contribEntries) {
+        contribs[id] = data;
+      }
+      setContributions(contribs);
+    } catch (err) {
+      console.error("Error al refrescar datos:", err);
+    }
+  }, []);
+
+  const handleSyncStrava = async () => {
+    setSyncing(s => ({ ...s, strava: true }));
+    try {
+      await syncStrava();
+      setToast({ message: "Strava sincronizado correctamente", type: "success" });
+      await refreshData();
+    } catch (err) {
+      setToast({ message: err.message || "Error al sincronizar Strava", type: "error" });
+    } finally {
+      setSyncing(s => ({ ...s, strava: false }));
+    }
+  };
+
+  const handleSyncGithub = async () => {
+    setSyncing(s => ({ ...s, github: true }));
+    try {
+      await syncGitHub();
+      setToast({ message: "GitHub sincronizado correctamente", type: "success" });
+      await refreshData();
+    } catch (err) {
+      setToast({ message: err.message || "Error al sincronizar GitHub", type: "error" });
+    } finally {
+      setSyncing(s => ({ ...s, github: false }));
+    }
+  };
+
+  const handleLinkHabit = async (integrationId, habitId) => {
+    try {
+      await updateIntegration(integrationId, { habit_id: habitId || null });
+      const updated = await getIntegrations();
+      setIntegrations(updated);
+      setToast({ message: "Integraci\u00f3n actualizada", type: "success" });
+    } catch (err) {
+      setToast({ message: err.message || "Error al vincular h\u00e1bito", type: "error" });
+    }
+  };
+
+  const handleCreateUnit = async ({ name, abbreviation }) => {
+    try {
+      await createUnit({ name, abbreviation });
+      const updated = await getAllUnits();
+      setUnits(updated);
+      setToast({ message: "Unidad creada correctamente", type: "success" });
+    } catch (err) {
+      setToast({ message: err.message || "Error al crear unidad", type: "error" });
+    }
+  };
+
+  const handleDeleteUnit = async (id) => {
+    try {
+      await deleteUnit(id);
+      const updated = await getAllUnits();
+      setUnits(updated);
+      setToast({ message: "Unidad eliminada", type: "success" });
+    } catch (err) {
+      setToast({ message: err.message || "Error al eliminar unidad", type: "error" });
+    }
+  };
 
   const handleSaveHabit = async (habitData) => {
     try {
@@ -588,7 +971,12 @@ export default function HabitTracker() {
       <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
 
       <div style={{ maxWidth: 720, margin: "0 auto", padding: "32px 20px 60px" }}>
-        <header style={{ marginBottom: 32 }}>
+        <header style={{ marginBottom: 32, position: "relative" }}>
+          <button
+            onClick={() => setShowSettings(true)}
+            title={"Configuraci\u00f3n"}
+            style={gearButton}
+          >{"\u2699\uFE0F"}</button>
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4 }}>
             <div style={{
               width: 10, height: 10, borderRadius: "50%",
@@ -709,6 +1097,29 @@ export default function HabitTracker() {
           message={"\u00BFEst\u00e1s seguro? Se eliminar\u00e1 el h\u00e1bito y todas sus contribuciones."}
           onConfirm={() => handleDeleteHabit(deletingId)}
           onCancel={() => setDeletingId(null)}
+        />
+      )}
+
+      {showSettings && (
+        <SettingsPanel
+          habits={habits}
+          units={units}
+          integrations={integrations}
+          syncing={syncing}
+          onClose={() => setShowSettings(false)}
+          onSyncStrava={handleSyncStrava}
+          onSyncGithub={handleSyncGithub}
+          onLinkHabit={handleLinkHabit}
+          onCreateUnit={handleCreateUnit}
+          onDeleteUnit={handleDeleteUnit}
+        />
+      )}
+
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onDismiss={() => setToast(null)}
         />
       )}
     </div>
