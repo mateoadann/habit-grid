@@ -1,6 +1,3 @@
-// Storage key for legacy localStorage data
-const STORAGE_KEY = "habit-grid-data";
-
 // Emoji picker options for habit creation/edit
 const EMOJI_OPTIONS = [
   "🎯", "💪", "📖", "🧘", "💻", "🏃",
@@ -29,4 +26,4 @@ const DEFAULT_UNITS = [
   { name: "Repeticiones", abbreviation: "rep", is_predefined: 1 },
 ];
 
-export { STORAGE_KEY, EMOJI_OPTIONS, DAYS_LABELS, MONTHS, DEFAULT_UNITS };
+export { EMOJI_OPTIONS, DAYS_LABELS, MONTHS, DEFAULT_UNITS };

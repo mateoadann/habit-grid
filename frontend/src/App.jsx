@@ -2,17 +2,18 @@ import { useState, useEffect } from "react";
 import { getAllHabits, createHabit, updateHabit, deleteHabit } from "./services/habitApi.js";
 import { getContributions, logContribution } from "./services/contributionApi.js";
 import { getAllUnits } from "./services/unitApi.js";
-
-const COLORS = {
-  empty: "rgba(255,255,255,0.04)",
-  l1: "#0e4429",
-  l2: "#006d32",
-  l3: "#26a641",
-  l4: "#39d353",
-};
-
-const DAYS_LABELS = ["L", "M", "X", "J", "V", "S", "D"];
-const MONTHS = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+import { COLORS, getColor } from "./constants/colors.js";
+import { EMOJI_OPTIONS, DAYS_LABELS, MONTHS } from "./constants/defaults.js";
+import {
+  smallBtn,
+  actionBtn,
+  labelStyle,
+  inputStyle,
+  modalOverlay,
+  modalBox,
+  cancelBtn,
+  deleteBtn,
+} from "./constants/styles.js";
 
 function getDateKey(date) {
   const d = new Date(date);
@@ -52,16 +53,13 @@ function groupByWeeks(days) {
   return weeks;
 }
 
-function getLevel(count) {
-  if (count === 0) return 0;
-  if (count === 1) return 1;
-  if (count === 2) return 2;
-  if (count <= 4) return 3;
-  return 4;
-}
-
-function getColor(level) {
-  return [COLORS.empty, COLORS.l1, COLORS.l2, COLORS.l3, COLORS.l4][level];
+function getLevel(value, minimum) {
+  if (value === 0) return 0;
+  if (value < minimum) return 0;
+  if (value >= minimum * 2.5) return 4;
+  if (value >= minimum * 2) return 3;
+  if (value >= minimum * 1.5) return 2;
+  return 1;
 }
 
 function getMonthLabels(weeks) {
@@ -136,7 +134,7 @@ function ContributionGrid({ habit, contributions, onToggle, selectedDate, onSele
           week.map((day, di) => {
             const key = getDateKey(day);
             const count = contributions[key] || 0;
-            const level = getLevel(count);
+            const level = getLevel(count, habit.minimum || 1);
             const dow = (day.getDay() + 6) % 7;
             const isToday = key === todayKey;
             const isSelected = key === selectedDate;
@@ -174,13 +172,15 @@ function HabitCard({ habit, contributions, onLog, onEdit, onDelete }) {
 
   const unitAbbr = habit.unit_abbreviation || "vec";
 
+  const habitMinimum = habit.minimum || 1;
+
   const currentStreak = (() => {
     let streak = 0;
     const d = new Date();
     d.setHours(0,0,0,0);
     while (true) {
       const key = getDateKey(d);
-      if (contributions[key] && contributions[key] > 0) {
+      if (contributions[key] && contributions[key] >= habitMinimum) {
         streak++;
         d.setDate(d.getDate() - 1);
       } else break;
@@ -298,8 +298,6 @@ function HabitModal({ habit, units, onSave, onClose }) {
   const [minimum, setMinimum] = useState(habit?.minimum || 1);
   const isEdit = !!habit?.id;
 
-  const EMOJI_OPTIONS = ["\uD83C\uDFAF","\uD83D\uDCAA","\uD83D\uDCD6","\uD83E\uDDD8","\uD83D\uDCBB","\uD83C\uDFC3","\u270D\uFE0F","\uD83C\uDFA8","\uD83C\uDFB5","\uD83E\uDDE0","\uD83D\uDCA7","\uD83E\uDD57","\uD83D\uDE34","\uD83D\uDCDD","\uD83D\uDD25","\u26A1","\uD83C\uDF31","\uD83C\uDFCB\uFE0F"];
-
   const handleSubmit = () => {
     if (!name.trim()) return;
     if (!unitId) return;
@@ -315,21 +313,8 @@ function HabitModal({ habit, units, onSave, onClose }) {
   };
 
   return (
-    <div style={{
-      position: "fixed", inset: 0, zIndex: 1000,
-      background: "rgba(0,0,0,0.7)", backdropFilter: "blur(8px)",
-      display: "flex", alignItems: "center", justifyContent: "center",
-      padding: 20,
-    }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{
-        background: "#0d1117",
-        border: "1px solid rgba(255,255,255,0.1)",
-        borderRadius: 16,
-        padding: "28px 28px 22px",
-        width: "100%",
-        maxWidth: 420,
-        boxShadow: "0 24px 80px rgba(0,0,0,0.6)",
-      }}>
+    <div style={modalOverlay} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={modalBox}>
         <h2 style={{
           margin: "0 0 20px",
           fontSize: 20,
@@ -398,13 +383,7 @@ function HabitModal({ habit, units, onSave, onClose }) {
         />
 
         <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
-          <button onClick={onClose} style={{
-            flex: 1, padding: "10px 0", borderRadius: 8,
-            background: "rgba(255,255,255,0.05)",
-            border: "1px solid rgba(255,255,255,0.1)",
-            color: "#e6edf3", fontSize: 14, cursor: "pointer",
-            fontFamily: "'DM Sans', sans-serif",
-          }}>Cancelar</button>
+          <button onClick={onClose} style={cancelBtn}>Cancelar</button>
           <button onClick={handleSubmit} style={{
             flex: 1, padding: "10px 0", borderRadius: 8,
             background: name.trim() ? COLORS.l3 : "rgba(255,255,255,0.05)",
@@ -424,85 +403,25 @@ function HabitModal({ habit, units, onSave, onClose }) {
 
 function ConfirmModal({ message, onConfirm, onCancel }) {
   return (
-    <div style={{
-      position: "fixed", inset: 0, zIndex: 1000,
-      background: "rgba(0,0,0,0.7)", backdropFilter: "blur(8px)",
-      display: "flex", alignItems: "center", justifyContent: "center",
-      padding: 20,
-    }} onClick={onCancel}>
+    <div style={modalOverlay} onClick={onCancel}>
       <div onClick={e => e.stopPropagation()} style={{
-        background: "#0d1117",
-        border: "1px solid rgba(255,255,255,0.1)",
-        borderRadius: 16,
+        ...modalBox,
         padding: "24px 28px",
         maxWidth: 360,
-        boxShadow: "0 24px 80px rgba(0,0,0,0.6)",
       }}>
         <p style={{ margin: "0 0 20px", color: "#e6edf3", fontSize: 15, fontFamily: "'DM Sans', sans-serif", lineHeight: 1.5 }}>
           {message}
         </p>
         <div style={{ display: "flex", gap: 10 }}>
-          <button onClick={onCancel} style={{
-            flex: 1, padding: "10px 0", borderRadius: 8,
-            background: "rgba(255,255,255,0.05)",
-            border: "1px solid rgba(255,255,255,0.1)",
-            color: "#e6edf3", fontSize: 14, cursor: "pointer",
-            fontFamily: "'DM Sans', sans-serif",
-          }}>Cancelar</button>
-          <button onClick={onConfirm} style={{
-            flex: 1, padding: "10px 0", borderRadius: 8,
-            background: "#da3633", border: "none",
-            color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer",
-            fontFamily: "'DM Sans', sans-serif",
-          }}>Eliminar</button>
+          <button onClick={onCancel} style={cancelBtn}>Cancelar</button>
+          <button onClick={onConfirm} style={deleteBtn}>Eliminar</button>
         </div>
       </div>
     </div>
   );
 }
 
-const smallBtn = {
-  background: "none", border: "1px solid rgba(255,255,255,0.06)",
-  borderRadius: 6, width: 30, height: 30, cursor: "pointer",
-  display: "flex", alignItems: "center", justifyContent: "center",
-  fontSize: 13, transition: "background 0.15s",
-};
 
-const actionBtn = {
-  width: 32, height: 32, borderRadius: 8,
-  background: "rgba(255,255,255,0.06)",
-  border: "1px solid rgba(255,255,255,0.1)",
-  color: "#e6edf3", fontSize: 18, fontWeight: 600,
-  cursor: "pointer", display: "flex",
-  alignItems: "center", justifyContent: "center",
-  fontFamily: "'JetBrains Mono', monospace",
-  transition: "all 0.15s",
-};
-
-const labelStyle = {
-  display: "block",
-  fontSize: 12,
-  fontWeight: 500,
-  color: "rgba(255,255,255,0.4)",
-  marginBottom: 6,
-  fontFamily: "'JetBrains Mono', monospace",
-  textTransform: "uppercase",
-  letterSpacing: "0.05em",
-};
-
-const inputStyle = {
-  width: "100%",
-  padding: "10px 12px",
-  borderRadius: 8,
-  border: "1px solid rgba(255,255,255,0.1)",
-  background: "rgba(255,255,255,0.04)",
-  color: "#e6edf3",
-  fontSize: 14,
-  fontFamily: "'DM Sans', sans-serif",
-  outline: "none",
-  marginBottom: 14,
-  boxSizing: "border-box",
-};
 
 export default function HabitTracker() {
   const [habits, setHabits] = useState([]);
@@ -657,7 +576,7 @@ export default function HabitTracker() {
   }
 
   const todayKey = getDateKey(new Date());
-  const habitsCompletedToday = habits.filter(h => (contributions[h.id]?.[todayKey] || 0) > 0).length;
+  const habitsCompletedToday = habits.filter(h => (contributions[h.id]?.[todayKey] || 0) >= (h.minimum || 1)).length;
 
   return (
     <div style={{
