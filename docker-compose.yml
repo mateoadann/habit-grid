@@ -6,7 +6,7 @@ services:
     container_name: habit-grid-api
     restart: unless-stopped
     ports:
-      - "${PORT:-3001}:3001"
+      - "3001:3001"
     volumes:
       - sqlite-data:/app/data
     env_file:
@@ -26,7 +26,7 @@ services:
     container_name: habit-grid-web
     restart: unless-stopped
     ports:
-      - "80:80"
+      - "3080:80"
     depends_on:
       backend:
         condition: service_healthy
