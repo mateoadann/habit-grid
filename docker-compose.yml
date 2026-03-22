@@ -30,6 +30,13 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+    networks:
+      - default
+      - npm_proxy
+
+networks:
+  npm_proxy:
+    external: true
 
 volumes:
   sqlite-data:
