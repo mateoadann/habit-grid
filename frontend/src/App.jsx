@@ -72,13 +72,15 @@ function groupByWeeks(days) {
   return weeks;
 }
 
-function getLevel(value, minimum) {
+function getLevel(value, minimum, max) {
   if (value === 0) return 0;
   if (value < minimum) return 0;
-  if (value >= minimum * 2.5) return 4;
-  if (value >= minimum * 2) return 3;
-  if (value >= minimum * 1.5) return 2;
-  return 1;
+  if (max <= minimum) return 1;
+  const quartile = (max - minimum) / 4;
+  if (value < minimum + quartile) return 1;
+  if (value < minimum + quartile * 2) return 2;
+  if (value < minimum + quartile * 3) return 3;
+  return 4;
 }
 
 function getMonthLabels(weeks) {
@@ -118,6 +120,11 @@ function ContributionGrid({ habit, contributions, onToggle, selectedDate, onSele
   const leftPad = 28;
   const topPad = 22;
 
+  const maxCount = days.reduce((m, day) => {
+    const count = contributions[getDateKey(day)] || 0;
+    return count > m ? count : m;
+  }, 0);
+
   return (
     <div style={{ overflowX: "auto", paddingBottom: 4 }}>
       <svg
@@ -153,7 +160,7 @@ function ContributionGrid({ habit, contributions, onToggle, selectedDate, onSele
           week.map((day, di) => {
             const key = getDateKey(day);
             const count = contributions[key] || 0;
-            const level = getLevel(count, habit.minimum || 1);
+            const level = getLevel(count, habit.minimum || 1, maxCount);
             const dow = (day.getDay() + 6) % 7;
             const isToday = key === todayKey;
             const isSelected = key === selectedDate;
