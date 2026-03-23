@@ -507,7 +507,7 @@ function IntegrationCard({ integration, type, habits, syncing, onSync, onLinkHab
             </label>
             <select
               value={linkedHabitId}
-              onChange={e => onLinkHabit(type, e.target.value ? Number(e.target.value) : null)}
+              onChange={e => onLinkHabit(type, e.target.value || null)}
               style={{
                 ...inputStyle,
                 marginBottom: 0,

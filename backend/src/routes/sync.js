@@ -48,6 +48,12 @@ router.post("/github", async (req, res, next) => {
 
     const result = await syncContributions(integration.habit_id);
 
+    // Ensure integration status is "connected" after successful sync
+    db.prepare(`
+      UPDATE integrations SET status = 'connected', updated_at = ?
+      WHERE id = 'github' AND status != 'connected'
+    `).run(new Date().toISOString());
+
     res.json({ success: true, ...result });
   } catch (err) {
     next(err);
