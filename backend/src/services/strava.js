@@ -221,11 +221,12 @@ async function syncActivities(habitId) {
   // Fetch activities
   const activities = await fetchActivities(accessToken, after, before);
 
-  // Group activities by date (YYYY-MM-DD)
+  // Group activities by date — sum minutes (moving_time is in seconds)
   const byDate = {};
   for (const activity of activities) {
     const dateKey = activity.start_date.split("T")[0];
-    byDate[dateKey] = (byDate[dateKey] || 0) + 1;
+    const minutes = Math.round((activity.moving_time || 0) / 60);
+    byDate[dateKey] = (byDate[dateKey] || 0) + minutes;
   }
 
   // UPSERT contributions
