@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { getAllHabits, createHabit, updateHabit, deleteHabit } from "./services/habitApi.js";
 import { getContributions, logContribution } from "./services/contributionApi.js";
 import { getAllUnits, createUnit, deleteUnit } from "./services/unitApi.js";
@@ -42,6 +42,64 @@ function useIsMobile(breakpoint = 768) {
     return () => window.removeEventListener('resize', handler);
   }, [breakpoint]);
   return isMobile;
+}
+
+function usePullToRefresh(enabled) {
+  const [pullDistance, setPullDistance] = useState(0);
+  const [pulling, setPulling] = useState(false);
+  const startY = useRef(0);
+  const distanceRef = useRef(0);
+  const threshold = 80;
+
+  // Keep ref in sync with state so touchend can read current value
+  distanceRef.current = pullDistance;
+
+  useEffect(() => {
+    if (!enabled) return;
+
+    const onTouchStart = (e) => {
+      if (window.scrollY === 0) {
+        startY.current = e.touches[0].clientY;
+        setPulling(true);
+      }
+    };
+
+    const onTouchMove = (e) => {
+      if (!startY.current) return;
+      if (window.scrollY > 0) {
+        setPulling(false);
+        setPullDistance(0);
+        startY.current = 0;
+        return;
+      }
+      const delta = e.touches[0].clientY - startY.current;
+      if (delta > 0) {
+        setPullDistance(Math.min(delta * 0.5, 140));
+      }
+    };
+
+    const onTouchEnd = () => {
+      if (distanceRef.current >= threshold) {
+        window.location.reload();
+      }
+      setPullDistance(0);
+      setPulling(false);
+      startY.current = 0;
+    };
+
+    document.addEventListener("touchstart", onTouchStart, { passive: true });
+    document.addEventListener("touchmove", onTouchMove, { passive: true });
+    document.addEventListener("touchend", onTouchEnd);
+
+    return () => {
+      document.removeEventListener("touchstart", onTouchStart);
+      document.removeEventListener("touchmove", onTouchMove);
+      document.removeEventListener("touchend", onTouchEnd);
+    };
+  }, [enabled]);
+
+  const ready = pullDistance >= threshold;
+  return { pullDistance, pulling, ready, threshold };
 }
 
 function getDateKey(date) {
@@ -791,6 +849,7 @@ function SettingsPanel({ habits, units, integrations, syncing, onClose, onSyncSt
 
 export default function HabitTracker() {
   const isMobile = useIsMobile();
+  const { pullDistance, pulling, ready } = usePullToRefresh(isMobile);
   const [habits, setHabits] = useState([]);
   const [contributions, setContributions] = useState({});
   const [units, setUnits] = useState([]);
@@ -1062,6 +1121,30 @@ export default function HabitTracker() {
       fontFamily: "'DM Sans', sans-serif",
     }}>
       <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+      {pulling && pullDistance > 0 && (
+        <div style={{
+          height: pullDistance,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          overflow: "hidden",
+          transition: pulling ? "none" : "height 0.3s ease",
+          color: ready ? "rgba(255,255,255,0.8)" : "rgba(255,255,255,0.4)",
+          fontSize: 13,
+          fontFamily: "'DM Sans', sans-serif",
+          userSelect: "none",
+        }}>
+          <span style={{
+            display: "inline-block",
+            transform: ready ? "rotate(180deg)" : "rotate(0deg)",
+            transition: "transform 0.2s ease",
+            fontSize: 20,
+            marginRight: 8,
+          }}>{"↓"}</span>
+          {ready ? "Soltá para recargar" : "Deslizá para recargar"}
+        </div>
+      )}
 
       <div style={{ maxWidth: isMobile ? 720 : 1200, margin: "0 auto", padding: "32px 20px 60px" }}>
         <header style={{ marginBottom: 32, position: "relative" }}>
