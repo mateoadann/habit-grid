@@ -1,4 +1,4 @@
-.PHONY: up down restart build logs logs-backend logs-frontend ps test test-backend test-frontend shell-backend shell-frontend health clean
+.PHONY: up down restart build logs logs-backend logs-frontend ps test test-backend test-frontend shell-backend shell-frontend health clean dev seed seed-force
 
 # Levantar todos los servicios
 up:
@@ -53,6 +53,18 @@ shell-frontend:
 # Health check del backend
 health:
 	@docker compose exec backend wget -qO- http://localhost:3001/api/health || echo "Backend no responde"
+
+# Desarrollo local (sin Docker)
+dev:
+	cd backend && npm run dev & cd frontend && npm run dev & wait
+
+# Seed de datos de desarrollo (local, sin Docker)
+seed:
+	cd backend && node scripts/seed.js
+
+# Seed sin confirmacion
+seed-force:
+	cd backend && node scripts/seed.js --force
 
 # Limpiar todo (contenedores, imágenes, volúmenes huérfanos)
 clean:

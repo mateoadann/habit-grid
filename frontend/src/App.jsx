@@ -34,6 +34,16 @@ import {
   toastError,
 } from "./constants/styles.js";
 
+function useIsMobile(breakpoint = 768) {
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= breakpoint);
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth <= breakpoint);
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, [breakpoint]);
+  return isMobile;
+}
+
 function getDateKey(date) {
   const d = new Date(date);
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
@@ -119,14 +129,23 @@ function ContributionGrid({ habit, contributions, onToggle, selectedDate, onSele
   const gap = 3;
   const leftPad = 28;
   const topPad = 22;
+  const [tooltip, setTooltip] = useState({ text: "", x: 0, y: 0, visible: false });
 
   const maxCount = days.reduce((m, day) => {
     const count = contributions[getDateKey(day)] || 0;
     return count > m ? count : m;
   }, 0);
 
-  return (
-    <div style={{ overflowX: "auto", paddingBottom: 4 }}>
+  const getTooltipText = (count, day) => {
+    const dd = String(day.getDate()).padStart(2, "0");
+    const mm = String(day.getMonth() + 1).padStart(2, "0");
+    if (count === 0) return `Sin contribuciones el ${dd}/${mm}`;
+    if (count === 1) return `1 contribuci\u00f3n el ${dd}/${mm}`;
+    return `${count} contribuciones el ${dd}/${mm}`;
+  };
+
+  return (<>
+    <div style={{ overflowX: "auto", paddingBottom: 4, position: "relative" }}>
       <svg
         width={leftPad + weeks.length * (cellSize + gap) + 10}
         height={topPad + 7 * (cellSize + gap) + 10}
@@ -165,33 +184,78 @@ function ContributionGrid({ habit, contributions, onToggle, selectedDate, onSele
             const isToday = key === todayKey;
             const isSelected = key === selectedDate;
             const isFuture = day > new Date();
+            const rectX = leftPad + wi * (cellSize + gap);
+            const rectY = topPad + dow * (cellSize + gap);
             return (
-              <g key={key}>
-                <rect
-                  x={leftPad + wi * (cellSize + gap)}
-                  y={topPad + dow * (cellSize + gap)}
-                  width={cellSize}
-                  height={cellSize}
-                  rx={2.5}
-                  fill={isFuture ? "rgba(255,255,255,0.015)" : getColor(level)}
-                  stroke={isSelected ? "#58a6ff" : isToday ? "rgba(255,255,255,0.3)" : "none"}
-                  strokeWidth={isSelected ? 2 : isToday ? 1.5 : 0}
-                  style={{ cursor: isFuture ? "default" : "pointer", transition: "fill 0.15s" }}
-                  onClick={() => !isFuture && onSelectDate(key)}
-                >
-                  <title>{`${key}: ${count} ${count === 1 ? "vez" : "veces"}`}</title>
-                </rect>
-              </g>
+              <rect
+                key={key}
+                x={rectX}
+                y={rectY}
+                width={cellSize}
+                height={cellSize}
+                rx={2.5}
+                fill={isFuture ? "rgba(255,255,255,0.015)" : getColor(level)}
+                stroke={isSelected ? "#58a6ff" : isToday ? "rgba(255,255,255,0.3)" : "none"}
+                strokeWidth={isSelected ? 2 : isToday ? 1.5 : 0}
+                style={{ cursor: isFuture ? "default" : "pointer", transition: "fill 0.15s" }}
+                onClick={() => !isFuture && onSelectDate(key)}
+                onMouseEnter={(e) => {
+                  if (!isFuture) {
+                    const rect = e.target.getBoundingClientRect();
+                    setTooltip({
+                      text: getTooltipText(count, day),
+                      x: rect.left + rect.width / 2,
+                      y: rect.top,
+                      visible: true,
+                    });
+                  }
+                }}
+                onMouseLeave={() => setTooltip(t => ({ ...t, visible: false }))}
+              />
             );
           })
         )}
       </svg>
     </div>
-  );
+    {tooltip.visible && (
+      <div style={{
+        position: "fixed",
+        left: tooltip.x,
+        top: tooltip.y - 6,
+        transform: "translate(-50%, -100%)",
+        background: "#1b1f23",
+        color: "#fff",
+        fontSize: 11,
+        fontFamily: "'JetBrains Mono', monospace",
+        padding: "4px 8px",
+        borderRadius: 4,
+        whiteSpace: "nowrap",
+        pointerEvents: "none",
+        opacity: 1,
+        transition: "opacity 0.05s",
+        zIndex: 1000,
+        border: "1px solid rgba(255,255,255,0.1)",
+      }}>
+        {tooltip.text}
+        <div style={{
+          position: "absolute",
+          left: "50%",
+          top: "100%",
+          transform: "translateX(-50%)",
+          width: 0,
+          height: 0,
+          borderLeft: "4px solid transparent",
+          borderRight: "4px solid transparent",
+          borderTop: "4px solid #1b1f23",
+        }} />
+      </div>
+    )}
+  </>);
 }
 
-function HabitCard({ habit, contributions, onLog, onEdit, onDelete }) {
+function HabitCard({ habit, contributions, onLog, onEdit, onDelete, isMobile }) {
   const [selectedDate, setSelectedDate] = useState(null);
+  const [collapsed, setCollapsed] = useState(false);
   const todayKey = getDateKey(new Date());
   const todayCount = contributions[todayKey] || 0;
   const totalCount = Object.values(contributions).reduce((a, b) => a + b, 0);
@@ -224,80 +288,101 @@ function HabitCard({ habit, contributions, onLog, onEdit, onDelete }) {
       border: "1px solid rgba(255,255,255,0.07)",
       borderRadius: 12,
       padding: "20px 22px",
-      marginBottom: 16,
+      marginBottom: isMobile ? 16 : 0,
     }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
-        <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 22 }}>{habit.emoji}</span>
-            <h3 style={{ margin: 0, fontSize: 17, fontWeight: 600, color: "#e6edf3", fontFamily: "'JetBrains Mono', monospace" }}>
-              {habit.name}
-            </h3>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: isMobile && collapsed ? 0 : 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1 }}>
+          {isMobile && (
+            <button
+              onClick={() => setCollapsed(c => !c)}
+              style={{
+                background: "none",
+                border: "none",
+                color: "rgba(255,255,255,0.4)",
+                fontSize: 12,
+                cursor: "pointer",
+                padding: "2px 4px",
+                lineHeight: 1,
+              }}
+            >{collapsed ? "\u25B6" : "\u25BC"}</button>
+          )}
+          <span style={{ fontSize: 22 }}>{habit.emoji}</span>
+          <h3 style={{ margin: 0, fontSize: 17, fontWeight: 600, color: "#e6edf3", fontFamily: "'JetBrains Mono', monospace" }}>
+            {habit.name}
+          </h3>
+        </div>
+        {!(isMobile && collapsed) && (
+          <div style={{ display: "flex", gap: 6 }}>
+            <button onClick={() => onEdit(habit)} style={smallBtn}>{"\u270F\uFE0F"}</button>
+            <button onClick={() => onDelete(habit.id)} style={smallBtn}>{"\uD83D\uDDD1\uFE0F"}</button>
           </div>
-          {habit.description && (
-            <p style={{ margin: "4px 0 0 32px", fontSize: 13, color: "rgba(255,255,255,0.4)", fontFamily: "'DM Sans', sans-serif" }}>
-              {habit.description}
-            </p>
-          )}
-          {habit.minimum > 0 && (
-            <p style={{ margin: "2px 0 0 32px", fontSize: 11, color: "rgba(255,255,255,0.25)", fontFamily: "'JetBrains Mono', monospace" }}>
-              {"Min: " + habit.minimum + " " + unitAbbr}
-            </p>
-          )}
-        </div>
-        <div style={{ display: "flex", gap: 6 }}>
-          <button onClick={() => onEdit(habit)} style={smallBtn}>{"\u270F\uFE0F"}</button>
-          <button onClick={() => onDelete(habit.id)} style={smallBtn}>{"\uD83D\uDDD1\uFE0F"}</button>
-        </div>
+        )}
       </div>
 
-      <ContributionGrid
-        habit={habit}
-        contributions={contributions}
-        selectedDate={selectedDate}
-        onSelectDate={setSelectedDate}
-      />
+      {!(isMobile && collapsed) && (<>
+        {habit.description && (
+          <p style={{ margin: "-8px 0 10px 32px", fontSize: 13, color: "rgba(255,255,255,0.4)", fontFamily: "'DM Sans', sans-serif" }}>
+            {habit.description}
+          </p>
+        )}
+        {habit.minimum > 0 && (
+          <p style={{ margin: "2px 0 10px 32px", fontSize: 11, color: "rgba(255,255,255,0.25)", fontFamily: "'JetBrains Mono', monospace" }}>
+            {"Min: " + habit.minimum + " " + unitAbbr}
+          </p>
+        )}
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 14 }}>
-        <div style={{ display: "flex", gap: 20 }}>
-          <Stat label="Hoy" value={todayCount + " " + unitAbbr} accent={todayCount > 0} />
-          <Stat label="Racha" value={`${currentStreak}d`} accent={currentStreak >= 7} />
-          <Stat label="Total" value={totalCount + " " + unitAbbr} />
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 12, color: "rgba(255,255,255,0.35)", fontFamily: "'JetBrains Mono', monospace" }}>
-            {isToday ? "Hoy" : activeDate}
-          </span>
-          <button
-            onClick={() => {
-              const c = activeDateCount > 0 ? activeDateCount - 1 : 0;
-              onLog(habit.id, activeDate, c);
-            }}
-            style={{
-              ...actionBtn,
-              opacity: activeDateCount === 0 ? 0.3 : 1,
-              pointerEvents: activeDateCount === 0 ? "none" : "auto",
-            }}
-          >{"\u2212"}</button>
-          <span style={{
-            fontFamily: "'JetBrains Mono', monospace",
-            fontSize: 16,
-            fontWeight: 700,
-            color: activeDateCount > 0 ? COLORS.l4 : "rgba(255,255,255,0.3)",
-            minWidth: 24,
-            textAlign: "center",
-          }}>{activeDateCount}</span>
-          <button onClick={() => onLog(habit.id, activeDate, activeDateCount + 1)} style={actionBtn}>+</button>
-        </div>
-      </div>
+        <ContributionGrid
+          habit={habit}
+          contributions={contributions}
+          selectedDate={selectedDate}
+          onSelectDate={setSelectedDate}
+        />
 
-      <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 12, justifyContent: "flex-end" }}>
-        <span style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", fontFamily: "'JetBrains Mono', monospace" }}>Menos</span>
-        {[0,1,2,3,4].map(l => (
-          <div key={l} style={{ width: 11, height: 11, borderRadius: 2, background: getColor(l) }} />
-        ))}
-        <span style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", fontFamily: "'JetBrains Mono', monospace" }}>M{"\u00e1"}s</span>
-      </div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 14 }}>
+          <div style={{ display: "flex", gap: 20 }}>
+            <Stat label="Hoy" value={todayCount + " " + unitAbbr} accent={todayCount > 0} />
+            <Stat label="Racha" value={`${currentStreak}d`} accent={currentStreak >= 7} />
+            <Stat label="Total" value={totalCount + " " + unitAbbr} />
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 12, color: "rgba(255,255,255,0.35)", fontFamily: "'JetBrains Mono', monospace" }}>
+              {isToday ? "Hoy" : (() => {
+                const [y, m, d] = activeDate.split("-");
+                const meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+                return `${parseInt(d)} ${meses[parseInt(m) - 1]} ${y}`;
+              })()}
+            </span>
+            <button
+              onClick={() => {
+                const c = activeDateCount > 0 ? activeDateCount - 1 : 0;
+                onLog(habit.id, activeDate, c);
+              }}
+              style={{
+                ...actionBtn,
+                opacity: activeDateCount === 0 ? 0.3 : 1,
+                pointerEvents: activeDateCount === 0 ? "none" : "auto",
+              }}
+            >{"\u2212"}</button>
+            <span style={{
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: 16,
+              fontWeight: 700,
+              color: activeDateCount > 0 ? COLORS.l4 : "rgba(255,255,255,0.3)",
+              minWidth: 24,
+              textAlign: "center",
+            }}>{activeDateCount}</span>
+            <button onClick={() => onLog(habit.id, activeDate, activeDateCount + 1)} style={actionBtn}>+</button>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 12, justifyContent: "flex-end" }}>
+          <span style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", fontFamily: "'JetBrains Mono', monospace" }}>Menos</span>
+          {[0,1,2,3,4].map(l => (
+            <div key={l} style={{ width: 11, height: 11, borderRadius: 2, background: getColor(l) }} />
+          ))}
+          <span style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", fontFamily: "'JetBrains Mono', monospace" }}>M{"\u00e1"}s</span>
+        </div>
+      </>)}
     </div>
   );
 }
@@ -705,6 +790,7 @@ function SettingsPanel({ habits, units, integrations, syncing, onClose, onSyncSt
 }
 
 export default function HabitTracker() {
+  const isMobile = useIsMobile();
   const [habits, setHabits] = useState([]);
   const [contributions, setContributions] = useState({});
   const [units, setUnits] = useState([]);
@@ -977,7 +1063,7 @@ export default function HabitTracker() {
     }}>
       <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
 
-      <div style={{ maxWidth: 720, margin: "0 auto", padding: "32px 20px 60px" }}>
+      <div style={{ maxWidth: isMobile ? 720 : 1200, margin: "0 auto", padding: "32px 20px 60px" }}>
         <header style={{ marginBottom: 32, position: "relative" }}>
           <button
             onClick={() => setShowSettings(true)}
@@ -1031,16 +1117,19 @@ export default function HabitTracker() {
           </div>
         )}
 
-        {habits.map(habit => (
-          <HabitCard
-            key={habit.id}
-            habit={habit}
-            contributions={contributions[habit.id] || {}}
-            onLog={handleLog}
-            onEdit={(h) => { setEditingHabit(h); setShowModal(true); }}
-            onDelete={(id) => setDeletingId(id)}
-          />
-        ))}
+        <div style={isMobile ? {} : { display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 16, marginBottom: 16 }}>
+          {habits.map(habit => (
+            <HabitCard
+              key={habit.id}
+              habit={habit}
+              contributions={contributions[habit.id] || {}}
+              onLog={handleLog}
+              onEdit={(h) => { setEditingHabit(h); setShowModal(true); }}
+              onDelete={(id) => setDeletingId(id)}
+              isMobile={isMobile}
+            />
+          ))}
+        </div>
 
         <button
           onClick={() => { setEditingHabit(null); setShowModal(true); }}
