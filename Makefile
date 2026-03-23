@@ -1,4 +1,4 @@
-.PHONY: up down restart build logs logs-backend logs-frontend ps test test-backend test-frontend shell-backend shell-frontend health clean dev seed seed-force
+.PHONY: up down restart build logs logs-backend logs-frontend ps test test-backend test-frontend shell-backend shell-frontend health clean dev seed seed-force setup
 
 # Levantar todos los servicios
 up:
@@ -65,6 +65,13 @@ seed:
 # Seed sin confirmacion
 seed-force:
 	cd backend && node scripts/seed.js --force
+
+# Setup inicial del proyecto (git hooks, dependencias)
+setup:
+	git config core.hooksPath .githooks
+	cd backend && npm install
+	cd frontend && npm install
+	@echo "Setup completo. Git hooks activados."
 
 # Limpiar todo (contenedores, imágenes, volúmenes huérfanos)
 clean:

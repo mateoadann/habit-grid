@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(git rev-parse --show-toplevel)"
+FAILED=0
+
+echo "Running pre-push checks..."
+echo ""
+
+# Backend tests
+echo "==> Running backend tests..."
+if (cd "$ROOT_DIR/backend" && npm test); then
+  echo "    Backend tests passed."
+else
+  echo "    Backend tests FAILED."
+  FAILED=1
+fi
+
+echo ""
+
+# Frontend tests
+echo "==> Running frontend tests..."
+if (cd "$ROOT_DIR/frontend" && npm test); then
+  echo "    Frontend tests passed."
+else
+  echo "    Frontend tests FAILED."
+  FAILED=1
+fi
+
+echo ""
+
+if [ "$FAILED" -ne 0 ]; then
+  echo "Push BLOCKED: one or more test suites failed. Fix the errors above before pushing."
+  exit 1
+fi
+
+echo "All tests passed. Pushing..."
