@@ -178,8 +178,17 @@ function sumContributionsByDate(contribArray) {
   return result;
 }
 
-function ContributionGrid({ habit, contributions, onToggle, selectedDate, onSelectDate }) {
-  const days = getDaysInRange(20);
+function ContributionGrid({ habit, contributions, onToggle, selectedDate, onSelectDate, isMobile }) {
+  const mobileWeeks = (() => {
+    const threeMonthsAgo = new Date();
+    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+    const day = threeMonthsAgo.getDay();
+    const daysToMonday = day === 0 ? 6 : day - 1;
+    threeMonthsAgo.setDate(threeMonthsAgo.getDate() - daysToMonday);
+    const diffDays = Math.ceil((new Date() - threeMonthsAgo) / (1000 * 60 * 60 * 24));
+    return Math.ceil(diffDays / 7);
+  })();
+  const days = getDaysInRange(isMobile ? mobileWeeks : 20);
   const weeks = groupByWeeks(days);
   const monthLabels = getMonthLabels(weeks);
   const todayKey = getDateKey(new Date());
@@ -188,6 +197,13 @@ function ContributionGrid({ habit, contributions, onToggle, selectedDate, onSele
   const leftPad = 28;
   const topPad = 22;
   const [tooltip, setTooltip] = useState({ text: "", x: 0, y: 0, visible: false });
+
+  useEffect(() => {
+    if (!tooltip.visible) return;
+    const hide = () => setTooltip(t => ({ ...t, visible: false }));
+    window.addEventListener("scroll", hide, true);
+    return () => window.removeEventListener("scroll", hide, true);
+  }, [tooltip.visible]);
 
   const maxCount = days.reduce((m, day) => {
     const count = contributions[getDateKey(day)] || 0;
@@ -349,20 +365,14 @@ function HabitCard({ habit, contributions, onLog, onEdit, onDelete, isMobile }) 
       marginBottom: isMobile ? 16 : 0,
     }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: isMobile && collapsed ? 0 : 14 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1 }}>
+        <div
+          style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, cursor: isMobile ? "pointer" : "default" }}
+          onClick={() => isMobile && setCollapsed(c => !c)}
+        >
           {isMobile && (
-            <button
-              onClick={() => setCollapsed(c => !c)}
-              style={{
-                background: "none",
-                border: "none",
-                color: "rgba(255,255,255,0.4)",
-                fontSize: 12,
-                cursor: "pointer",
-                padding: "2px 4px",
-                lineHeight: 1,
-              }}
-            >{collapsed ? "\u25B6" : "\u25BC"}</button>
+            <span style={{ color: "rgba(255,255,255,0.4)", fontSize: 12, lineHeight: 1 }}>
+              {collapsed ? "\u25B6" : "\u25BC"}
+            </span>
           )}
           <span style={{ fontSize: 22 }}>{habit.emoji}</span>
           <h3 style={{ margin: 0, fontSize: 17, fontWeight: 600, color: "#e6edf3", fontFamily: "'JetBrains Mono', monospace" }}>
@@ -376,6 +386,13 @@ function HabitCard({ habit, contributions, onLog, onEdit, onDelete, isMobile }) 
           </div>
         )}
       </div>
+
+      {isMobile && collapsed && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8, marginTop: -8, fontSize: 11, fontFamily: "'JetBrains Mono', monospace", color: "rgba(255,255,255,0.35)" }}>
+          {currentStreak > 0 && <span>{"\uD83D\uDD25"} {currentStreak}d</span>}
+          <span style={{ color: todayCount > 0 ? COLORS.l4 : "rgba(255,255,255,0.25)" }}>{todayCount} {unitAbbr} hoy</span>
+        </div>
+      )}
 
       {!(isMobile && collapsed) && (<>
         {habit.description && (
@@ -394,52 +411,103 @@ function HabitCard({ habit, contributions, onLog, onEdit, onDelete, isMobile }) 
           contributions={contributions}
           selectedDate={selectedDate}
           onSelectDate={setSelectedDate}
+          isMobile={isMobile}
         />
 
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 14 }}>
-          <div style={{ display: "flex", gap: 20 }}>
+        <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", justifyContent: "space-between", alignItems: isMobile ? "stretch" : "center", gap: isMobile ? 12 : 0, marginTop: 14 }}>
+          <div style={{ display: "flex", gap: 20, justifyContent: isMobile ? "space-around" : "flex-start" }}>
             <Stat label="Hoy" value={todayCount + " " + unitAbbr} accent={todayCount > 0} />
             <Stat label="Racha" value={`${currentStreak}d`} accent={currentStreak >= 7} />
             <Stat label="Total" value={totalCount + " " + unitAbbr} />
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 12, color: "rgba(255,255,255,0.35)", fontFamily: "'JetBrains Mono', monospace" }}>
-              {isToday ? "Hoy" : (() => {
-                const [y, m, d] = activeDate.split("-");
-                const meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
-                return `${parseInt(d)} ${meses[parseInt(m) - 1]} ${y}`;
-              })()}
-            </span>
-            <button
-              onClick={() => {
-                const c = activeDateCount > 0 ? activeDateCount - 1 : 0;
-                onLog(habit.id, activeDate, c);
-              }}
-              style={{
-                ...actionBtn,
-                opacity: activeDateCount === 0 ? 0.3 : 1,
-                pointerEvents: activeDateCount === 0 ? "none" : "auto",
-              }}
-            >{"\u2212"}</button>
-            <span style={{
-              fontFamily: "'JetBrains Mono', monospace",
-              fontSize: 16,
-              fontWeight: 700,
-              color: activeDateCount > 0 ? COLORS.l4 : "rgba(255,255,255,0.3)",
-              minWidth: 24,
-              textAlign: "center",
-            }}>{activeDateCount}</span>
-            <button onClick={() => onLog(habit.id, activeDate, activeDateCount + 1)} style={actionBtn}>+</button>
-          </div>
+          {isMobile ? (<>
+            <div style={{ textAlign: "center", marginBottom: 4 }}>
+              <span style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>
+                {isToday ? "Hoy" : (() => {
+                  const [y, m, d] = activeDate.split("-");
+                  const meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+                  const dias = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
+                  const dateObj = new Date(parseInt(y), parseInt(m) - 1, parseInt(d));
+                  return `${dias[dateObj.getDay()]} ${parseInt(d)} ${meses[parseInt(m) - 1]} ${y}`;
+                })()}
+              </span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <button
+                  onClick={() => {
+                    const c = activeDateCount > 0 ? activeDateCount - 1 : 0;
+                    onLog(habit.id, activeDate, c);
+                  }}
+                  style={{
+                    ...actionBtn,
+                    opacity: activeDateCount === 0 ? 0.3 : 1,
+                    pointerEvents: activeDateCount === 0 ? "none" : "auto",
+                  }}
+                >{"\u2212"}</button>
+                <span style={{
+                  fontFamily: "'JetBrains Mono', monospace",
+                  fontSize: 16,
+                  fontWeight: 700,
+                  color: activeDateCount > 0 ? COLORS.l4 : "rgba(255,255,255,0.3)",
+                  minWidth: 24,
+                  textAlign: "center",
+                }}>{activeDateCount}</span>
+                <button onClick={() => onLog(habit.id, activeDate, activeDateCount + 1)} style={actionBtn}>+</button>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ fontSize: 8, color: "rgba(255,255,255,0.25)", fontFamily: "'JetBrains Mono', monospace" }}>Menos</span>
+                {[0,1,2,3,4].map(l => (
+                  <div key={l} style={{ width: 11, height: 11, borderRadius: 2, background: getColor(l) }} />
+                ))}
+                <span style={{ fontSize: 8, color: "rgba(255,255,255,0.25)", fontFamily: "'JetBrains Mono', monospace" }}>M{"\u00e1"}s</span>
+              </div>
+            </div>
+          </>
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 12, color: "rgba(255,255,255,0.35)", fontFamily: "'JetBrains Mono', monospace" }}>
+                {isToday ? "Hoy" : (() => {
+                  const [y, m, d] = activeDate.split("-");
+                  const meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+                  const dias = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
+                  const dateObj = new Date(parseInt(y), parseInt(m) - 1, parseInt(d));
+                  return `${dias[dateObj.getDay()]} ${parseInt(d)} ${meses[parseInt(m) - 1]} ${y}`;
+                })()}
+              </span>
+              <button
+                onClick={() => {
+                  const c = activeDateCount > 0 ? activeDateCount - 1 : 0;
+                  onLog(habit.id, activeDate, c);
+                }}
+                style={{
+                  ...actionBtn,
+                  opacity: activeDateCount === 0 ? 0.3 : 1,
+                  pointerEvents: activeDateCount === 0 ? "none" : "auto",
+                }}
+              >{"\u2212"}</button>
+              <span style={{
+                fontFamily: "'JetBrains Mono', monospace",
+                fontSize: 16,
+                fontWeight: 700,
+                color: activeDateCount > 0 ? COLORS.l4 : "rgba(255,255,255,0.3)",
+                minWidth: 24,
+                textAlign: "center",
+              }}>{activeDateCount}</span>
+              <button onClick={() => onLog(habit.id, activeDate, activeDateCount + 1)} style={actionBtn}>+</button>
+            </div>
+          )}
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 12, justifyContent: "flex-end" }}>
-          <span style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", fontFamily: "'JetBrains Mono', monospace" }}>Menos</span>
-          {[0,1,2,3,4].map(l => (
-            <div key={l} style={{ width: 11, height: 11, borderRadius: 2, background: getColor(l) }} />
-          ))}
-          <span style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", fontFamily: "'JetBrains Mono', monospace" }}>M{"\u00e1"}s</span>
-        </div>
+        {!isMobile && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 12, justifyContent: "flex-end" }}>
+            <span style={{ fontSize: 8, color: "rgba(255,255,255,0.25)", fontFamily: "'JetBrains Mono', monospace" }}>Menos</span>
+            {[0,1,2,3,4].map(l => (
+              <div key={l} style={{ width: 11, height: 11, borderRadius: 2, background: getColor(l) }} />
+            ))}
+            <span style={{ fontSize: 8, color: "rgba(255,255,255,0.25)", fontFamily: "'JetBrains Mono', monospace" }}>M{"\u00e1"}s</span>
+          </div>
+        )}
       </>)}
     </div>
   );
