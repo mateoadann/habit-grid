@@ -47,6 +47,64 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
+            set -e
             cd ${{ secrets.VPS_PATH }}
+
+            echo "==> Saving current commit hash for rollback..."
+            PREVIOUS_COMMIT=$(git rev-parse HEAD)
+            echo "    Previous commit: $PREVIOUS_COMMIT"
+
+            echo "==> Pulling latest code from main..."
             git pull origin main
+            NEW_COMMIT=$(git rev-parse HEAD)
+            echo "    New commit: $NEW_COMMIT"
+
+            echo "==> Building and starting containers..."
             docker compose up --build -d
+
+            echo "==> Waiting for health check (up to 60s)..."
+            HEALTHY=false
+            for i in $(seq 1 12); do
+              echo "    Attempt $i/12..."
+              if curl -sf --max-time 5 http://localhost:3001/api/health > /dev/null 2>&1; then
+                HEALTHY=true
+                break
+              fi
+              sleep 5
+            done
+
+            if [ "$HEALTHY" = true ]; then
+              echo "==> Health check PASSED. Deploy successful!"
+              exit 0
+            fi
+
+            echo "==> Health check FAILED. Starting rollback..."
+
+            echo "==> Stopping broken containers..."
+            docker compose down
+
+            echo "==> Reverting to previous commit: $PREVIOUS_COMMIT"
+            git checkout $PREVIOUS_COMMIT
+
+            echo "==> Rebuilding with previous code..."
+            docker compose up --build -d
+
+            echo "==> Waiting for rollback health check (up to 60s)..."
+            ROLLBACK_HEALTHY=false
+            for i in $(seq 1 12); do
+              echo "    Rollback attempt $i/12..."
+              if curl -sf --max-time 5 http://localhost:3001/api/health > /dev/null 2>&1; then
+                ROLLBACK_HEALTHY=true
+                break
+              fi
+              sleep 5
+            done
+
+            if [ "$ROLLBACK_HEALTHY" = true ]; then
+              echo "==> Rollback successful. Service restored to $PREVIOUS_COMMIT"
+            else
+              echo "==> CRITICAL: Rollback health check also failed!"
+            fi
+
+            echo "==> Deploy FAILED. Rolled back from $NEW_COMMIT to $PREVIOUS_COMMIT"
+            exit 1

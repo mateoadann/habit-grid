@@ -1,4 +1,4 @@
-import { render, waitFor } from "@testing-library/react";
+import { render, waitFor, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import HabitTracker from "./App.jsx";
 
@@ -137,19 +137,25 @@ describe("getLevel", () => {
 });
 
 // ===========================================================================
-// 2. Tooltip text format tests
+// 2. Tooltip text format tests (CSS tooltip via mouseEnter on <rect>)
 // ===========================================================================
 describe("ContributionGrid tooltips", () => {
   it("shows 'Sin contribuciones el DD/MM' for days with 0 contributions", async () => {
     const { container } = await renderGrid({});
 
-    const titles = container.querySelectorAll("svg title");
-    expect(titles.length).toBeGreaterThan(0);
+    // Pick the first non-future rect (has cursor: pointer)
+    const rects = Array.from(container.querySelectorAll("svg rect")).filter(
+      (r) => r.style.cursor === "pointer",
+    );
+    expect(rects.length).toBeGreaterThan(0);
 
-    // All cells have 0 contributions, so every title should start with "Sin contribuciones"
-    for (const title of titles) {
-      expect(title.textContent).toMatch(/^Sin contribuciones el \d{2}\/\d{2}$/);
-    }
+    fireEvent.mouseEnter(rects[0]);
+
+    await waitFor(() => {
+      const tooltip = container.parentElement.querySelector("div[style*='position: fixed']");
+      expect(tooltip).toBeTruthy();
+      expect(tooltip.textContent).toMatch(/^Sin contribuciones el \d{2}\/\d{2}$/);
+    });
   });
 
   it("shows '1 contribucion el DD/MM' for days with exactly 1 contribution", async () => {
@@ -157,12 +163,29 @@ describe("ContributionGrid tooltips", () => {
     const dateKey = getDateKey(today);
     const { container } = await renderGrid({ [dateKey]: 1 });
 
-    const titles = Array.from(container.querySelectorAll("svg title"));
     const dd = String(today.getDate()).padStart(2, "0");
     const mm = String(today.getMonth() + 1).padStart(2, "0");
 
-    const match = titles.find((t) => t.textContent === `1 contribución el ${dd}/${mm}`);
-    expect(match).toBeTruthy();
+    // Find the rect for today — it has a stroke (today marker)
+    const rects = Array.from(container.querySelectorAll("svg rect")).filter(
+      (r) => r.style.cursor === "pointer",
+    );
+    expect(rects.length).toBeGreaterThan(0);
+
+    // Hover each rect until we find the one with the right tooltip text
+    let found = false;
+    for (const rect of rects) {
+      fireEvent.mouseEnter(rect);
+      await waitFor(() => {
+        const tooltip = container.parentElement.querySelector("div[style*='position: fixed']");
+        if (tooltip && tooltip.textContent === `1 contribución el ${dd}/${mm}`) {
+          found = true;
+        }
+      });
+      if (found) break;
+      fireEvent.mouseLeave(rect);
+    }
+    expect(found).toBe(true);
   });
 
   it("shows 'X contribuciones el DD/MM' for days with >1 contributions", async () => {
@@ -170,75 +193,79 @@ describe("ContributionGrid tooltips", () => {
     const dateKey = getDateKey(today);
     const { container } = await renderGrid({ [dateKey]: 5 });
 
-    const titles = Array.from(container.querySelectorAll("svg title"));
     const dd = String(today.getDate()).padStart(2, "0");
     const mm = String(today.getMonth() + 1).padStart(2, "0");
 
-    const match = titles.find((t) => t.textContent === `5 contribuciones el ${dd}/${mm}`);
-    expect(match).toBeTruthy();
+    const rects = Array.from(container.querySelectorAll("svg rect")).filter(
+      (r) => r.style.cursor === "pointer",
+    );
+    expect(rects.length).toBeGreaterThan(0);
+
+    let found = false;
+    for (const rect of rects) {
+      fireEvent.mouseEnter(rect);
+      await waitFor(() => {
+        const tooltip = container.parentElement.querySelector("div[style*='position: fixed']");
+        if (tooltip && tooltip.textContent === `5 contribuciones el ${dd}/${mm}`) {
+          found = true;
+        }
+      });
+      if (found) break;
+      fireEvent.mouseLeave(rect);
+    }
+    expect(found).toBe(true);
   });
 });
 
 // ===========================================================================
-// 3. <title> elements are children of <rect> (inside <g>), not standalone
+// 3. DOM structure — rects are direct children of <svg> (no <g> wrappers)
 // ===========================================================================
 describe("ContributionGrid DOM structure", () => {
-  it("renders <title> elements inside <g> elements alongside <rect>", async () => {
+  it("renders <rect> elements directly inside the <svg> without <g> wrappers", async () => {
     const { container } = await renderGrid({});
 
-    const titles = container.querySelectorAll("svg title");
-    expect(titles.length).toBeGreaterThan(0);
+    const svg = container.querySelector("svg");
+    expect(svg).toBeTruthy();
 
-    for (const title of titles) {
-      // In React source, <title> is a child of <rect> inside <g>.
-      // jsdom may hoist <title> to be a sibling of <rect> within <g>.
-      // Either way, the parent (or grandparent) must be a <g>.
-      const parent = title.parentElement;
-      const parentTag = parent.tagName.toLowerCase();
+    const rects = svg.querySelectorAll("rect");
+    expect(rects.length).toBeGreaterThan(0);
 
-      if (parentTag === "rect") {
-        // <title> stayed inside <rect> — verify <rect> is inside <g>
-        expect(parent.parentElement.tagName.toLowerCase()).toBe("g");
-      } else {
-        // jsdom hoisted <title> to <g> — verify sibling <rect> exists
-        expect(parentTag).toBe("g");
-        expect(parent.querySelector("rect")).toBeTruthy();
-      }
+    // Every rect's direct parent should be the <svg> itself
+    for (const rect of rects) {
+      expect(rect.parentElement.tagName.toLowerCase()).toBe("svg");
     }
   });
 });
 
 // ===========================================================================
-// 4. Future dates don't have <title> elements
+// 4. Future dates don't trigger tooltips
 // ===========================================================================
 describe("ContributionGrid future dates", () => {
-  it("every <g> with a <rect> also has a <title> (no future rects without titles)", async () => {
-    // The grid only renders days up to today, so there should be no future
-    // date rects. We verify that every <g> containing a <rect> also contains
-    // a <title>, confirming no cells were rendered as "future" (which would
-    // omit the title).
+  it("future date rects have cursor: default and do not show tooltip on hover", async () => {
     const { container } = await renderGrid({});
 
-    const groups = container.querySelectorAll("svg g");
-    expect(groups.length).toBeGreaterThan(0);
+    const futureRects = Array.from(container.querySelectorAll("svg rect")).filter(
+      (r) => r.style.cursor === "default",
+    );
 
-    for (const g of groups) {
-      const rect = g.querySelector("rect");
-      if (!rect) continue;
-      // <title> may be inside <rect> or hoisted to <g> by jsdom
-      const title = g.querySelector("title");
-      expect(title).toBeTruthy();
+    // There may or may not be future rects depending on the current day of
+    // the week. If there are any, hovering them should NOT produce a tooltip.
+    for (const rect of futureRects) {
+      fireEvent.mouseEnter(rect);
     }
+
+    // No tooltip div should be visible
+    const tooltip = container.parentElement.querySelector("div[style*='position: fixed']");
+    expect(tooltip).toBeFalsy();
   });
 
-  it("total <title> count matches total <g>-wrapped <rect> count", async () => {
+  it("non-future rect count matches rects with cursor: pointer", async () => {
     const { container } = await renderGrid({});
 
-    const dayGroups = Array.from(container.querySelectorAll("svg g")).filter((g) =>
-      g.querySelector("rect"),
-    );
-    const titles = container.querySelectorAll("svg title");
+    const allRects = container.querySelectorAll("svg rect");
+    const pointerRects = Array.from(allRects).filter((r) => r.style.cursor === "pointer");
+    const defaultRects = Array.from(allRects).filter((r) => r.style.cursor === "default");
 
-    expect(titles.length).toBe(dayGroups.length);
+    expect(pointerRects.length + defaultRects.length).toBe(allRects.length);
   });
 });
