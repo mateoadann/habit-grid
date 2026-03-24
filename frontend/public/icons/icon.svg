@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="108" fill="#0d1117"/>
+  <text
+    x="230"
+    y="420"
+    text-anchor="middle"
+    font-family="'SF Mono', 'Fira Code', 'Cascadia Code', 'JetBrains Mono', monospace"
+    font-weight="600"
+    font-size="480"
+    fill="#e6edf3"
+  >h</text>
+  <circle cx="400" cy="394" r="26" fill="#39d353"/>
+</svg>
