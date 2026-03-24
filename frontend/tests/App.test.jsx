@@ -29,7 +29,18 @@ vi.mock("../src/services/syncApi.js", () => ({
   syncGitHub: vi.fn(),
 }));
 
-import HabitTracker from "../src/App.jsx";
+vi.mock("../src/contexts/AuthContext.jsx", () => ({
+  useAuth: () => ({
+    user: { id: "user_test", username: "testuser" },
+    loading: false,
+    isAuthenticated: true,
+    login: vi.fn(),
+    logout: vi.fn(),
+  }),
+  AuthProvider: ({ children }) => children,
+}));
+
+import App from "../src/App.jsx";
 
 describe("App", () => {
   beforeEach(() => {
@@ -37,12 +48,12 @@ describe("App", () => {
   });
 
   it("renders loading state initially", () => {
-    render(<HabitTracker />);
+    render(<App />);
     expect(screen.getByText("Cargando...")).toBeInTheDocument();
   });
 
   it("renders main heading after data loads", async () => {
-    render(<HabitTracker />);
+    render(<App />);
     const heading = await screen.findByText(/habit/);
     expect(heading).toBeInTheDocument();
   });

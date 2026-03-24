@@ -1,6 +1,6 @@
 import { render, waitFor, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import HabitTracker from "./App.jsx";
+import App from "./App.jsx";
 
 // ---------------------------------------------------------------------------
 // Mock ALL service modules so HabitTracker renders without network calls
@@ -31,6 +31,17 @@ vi.mock("./services/integrationApi.js", () => ({
 vi.mock("./services/syncApi.js", () => ({
   syncStrava: vi.fn(),
   syncGitHub: vi.fn(),
+}));
+
+vi.mock("./contexts/AuthContext.jsx", () => ({
+  useAuth: () => ({
+    user: { id: "user_test", username: "testuser" },
+    loading: false,
+    isAuthenticated: true,
+    login: vi.fn(),
+    logout: vi.fn(),
+  }),
+  AuthProvider: ({ children }) => children,
 }));
 
 import { getAllHabits } from "./services/habitApi.js";
@@ -96,7 +107,7 @@ async function renderGrid(contribMap) {
   getIntegrations.mockResolvedValue([]);
   getContributions.mockResolvedValue(buildContribResponse(contribMap));
 
-  const result = render(<HabitTracker />);
+  const result = render(<App />);
 
   // Wait until loading spinner disappears
   await waitFor(() => {

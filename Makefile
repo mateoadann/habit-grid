@@ -1,4 +1,4 @@
-.PHONY: up down restart build logs logs-backend logs-frontend ps test test-backend test-frontend shell-backend shell-frontend health clean dev seed seed-force setup
+.PHONY: up down restart build logs logs-backend logs-frontend ps test test-backend test-frontend shell-backend shell-frontend health clean dev seed seed-force setup create-user
 
 # Levantar todos los servicios
 up:
@@ -72,6 +72,16 @@ setup:
 	cd backend && npm install
 	cd frontend && npm install
 	@echo "Setup completo. Git hooks activados."
+
+# Crear usuario (uso: make create-user U=username P=password)
+create-user:
+ifndef U
+	$(error Uso: make create-user U=username P=password)
+endif
+ifndef P
+	$(error Uso: make create-user U=username P=password)
+endif
+	docker compose exec backend node src/scripts/create-user.js "$(U)" "$(P)"
 
 # Limpiar todo (contenedores, imágenes, volúmenes huérfanos)
 clean:

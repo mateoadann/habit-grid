@@ -13,7 +13,7 @@ router.get("/:id/contributions", (req, res, next) => {
     const { id } = req.params;
 
     // Verify habit exists
-    const habit = db.prepare("SELECT id FROM habits WHERE id = ?").get(id);
+    const habit = db.prepare("SELECT id FROM habits WHERE id = ? AND user_id = ?").get(id, req.user.id);
     if (!habit) {
       throw createError(404, "Hábito no encontrado");
     }
@@ -57,7 +57,7 @@ router.post("/:id/contributions", (req, res, next) => {
     const { date, count } = req.body;
 
     // Verify habit exists
-    const habit = db.prepare("SELECT id FROM habits WHERE id = ?").get(id);
+    const habit = db.prepare("SELECT id FROM habits WHERE id = ? AND user_id = ?").get(id, req.user.id);
     if (!habit) {
       throw createError(404, "Hábito no encontrado");
     }
