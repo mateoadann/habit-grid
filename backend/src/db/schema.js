@@ -5,6 +5,13 @@ function createTables(db) {
       value TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      username TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS units (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL UNIQUE,
@@ -20,6 +27,7 @@ function createTables(db) {
       description TEXT DEFAULT '',
       unit_id INTEGER NOT NULL REFERENCES units(id) ON DELETE RESTRICT,
       minimum REAL NOT NULL DEFAULT 1,
+      user_id TEXT REFERENCES users(id),
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -44,6 +52,7 @@ function createTables(db) {
       config TEXT NOT NULL DEFAULT '{}',
       last_sync_at TEXT,
       status TEXT NOT NULL DEFAULT 'disconnected',
+      user_id TEXT REFERENCES users(id),
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -81,10 +90,27 @@ function createTables(db) {
 
   seedUnits();
 
+  // Migrations for existing databases
+  runMigrations(db);
+
   // Set schema version
   db.prepare(
-    "INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('version', '1')"
+    "INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('version', '2')"
   ).run();
+}
+
+function runMigrations(db) {
+  // Migration: add user_id to habits if missing
+  const habitsColumns = db.prepare("PRAGMA table_info(habits)").all();
+  if (!habitsColumns.find((c) => c.name === "user_id")) {
+    db.exec("ALTER TABLE habits ADD COLUMN user_id TEXT REFERENCES users(id)");
+  }
+
+  // Migration: add user_id to integrations if missing
+  const integrationsColumns = db.prepare("PRAGMA table_info(integrations)").all();
+  if (!integrationsColumns.find((c) => c.name === "user_id")) {
+    db.exec("ALTER TABLE integrations ADD COLUMN user_id TEXT REFERENCES users(id)");
+  }
 }
 
 export { createTables };

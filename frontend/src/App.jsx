@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useAuth } from "./contexts/AuthContext.jsx";
+import Login from "./components/Login.jsx";
 import { getAllHabits, createHabit, updateHabit, deleteHabit } from "./services/habitApi.js";
 import { getContributions, logContribution } from "./services/contributionApi.js";
 import { getAllUnits, createUnit, deleteUnit } from "./services/unitApi.js";
@@ -871,7 +873,7 @@ function UnitsSection({ units, onCreateUnit, onDeleteUnit }) {
   );
 }
 
-function SettingsPanel({ habits, units, integrations, syncing, onClose, onSyncStrava, onSyncGithub, onLinkHabit, onCreateUnit, onDeleteUnit }) {
+function SettingsPanel({ habits, units, integrations, syncing, onClose, onSyncStrava, onSyncGithub, onLinkHabit, onCreateUnit, onDeleteUnit, onLogout }) {
   const [activeTab, setActiveTab] = useState("integraciones");
 
   return (
@@ -910,12 +912,24 @@ function SettingsPanel({ habits, units, integrations, syncing, onClose, onSyncSt
             onDeleteUnit={onDeleteUnit}
           />
         )}
+        <div style={{ marginTop: 24, paddingTop: 16, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+          <button
+            onClick={onLogout}
+            style={{
+              width: "100%", padding: "10px 16px", background: "none",
+              border: "1px solid rgba(218,54,51,0.4)", borderRadius: 8,
+              color: "#da3633", fontSize: 13, fontFamily: "'JetBrains Mono', monospace",
+              cursor: "pointer",
+            }}
+          >Cerrar sesión</button>
+        </div>
       </div>
     </div>
   );
 }
 
-export default function HabitTracker() {
+function HabitTracker() {
+  const { logout } = useAuth();
   const isMobile = useIsMobile();
   const { pullDistance, pulling, ready } = usePullToRefresh(isMobile);
   const [habits, setHabits] = useState([]);
@@ -1359,6 +1373,7 @@ export default function HabitTracker() {
           onLinkHabit={handleLinkHabit}
           onCreateUnit={handleCreateUnit}
           onDeleteUnit={handleDeleteUnit}
+          onLogout={logout}
         />
       )}
 
@@ -1371,4 +1386,16 @@ export default function HabitTracker() {
       )}
     </div>
   );
+}
+
+export default function App() {
+  const { isAuthenticated, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div style={{ minHeight: "100vh", background: "#0d1117" }} />
+    );
+  }
+
+  return isAuthenticated ? <HabitTracker /> : <Login />;
 }

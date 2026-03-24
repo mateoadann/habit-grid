@@ -5,15 +5,16 @@ import { createError } from "../middleware/errorHandler.js";
 const router = Router();
 
 // GET /api/habits — list all habits with unit info
-router.get("/", (_req, res, next) => {
+router.get("/", (req, res, next) => {
   try {
     const db = getDb();
     const habits = db.prepare(`
       SELECT h.*, u.name AS unit_name, u.abbreviation AS unit_abbreviation
       FROM habits h
       JOIN units u ON h.unit_id = u.id
+      WHERE h.user_id = ?
       ORDER BY h.created_at DESC
-    `).all();
+    `).all(req.user.id);
 
     res.json(habits);
   } catch (err) {
@@ -29,8 +30,8 @@ router.get("/:id", (req, res, next) => {
       SELECT h.*, u.name AS unit_name, u.abbreviation AS unit_abbreviation
       FROM habits h
       JOIN units u ON h.unit_id = u.id
-      WHERE h.id = ?
-    `).get(req.params.id);
+      WHERE h.id = ? AND h.user_id = ?
+    `).get(req.params.id, req.user.id);
 
     if (!habit) {
       throw createError(404, "Hábito no encontrado");
@@ -69,9 +70,9 @@ router.post("/", (req, res, next) => {
     const now = new Date().toISOString();
 
     db.prepare(`
-      INSERT INTO habits (id, name, emoji, description, unit_id, minimum, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, name.trim(), emoji || "🎯", description || "", unit_id, minimum, now, now);
+      INSERT INTO habits (id, name, emoji, description, unit_id, minimum, user_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, name.trim(), emoji || "🎯", description || "", unit_id, minimum, req.user.id, now, now);
 
     // Return created habit with unit info
     const created = db.prepare(`
@@ -95,7 +96,7 @@ router.put("/:id", (req, res, next) => {
     const { name, emoji, description, unit_id, minimum } = req.body;
 
     // Check habit exists
-    const existing = db.prepare("SELECT id FROM habits WHERE id = ?").get(id);
+    const existing = db.prepare("SELECT id FROM habits WHERE id = ? AND user_id = ?").get(id, req.user.id);
     if (!existing) {
       throw createError(404, "Hábito no encontrado");
     }
@@ -122,8 +123,8 @@ router.put("/:id", (req, res, next) => {
     db.prepare(`
       UPDATE habits
       SET name = ?, emoji = ?, description = ?, unit_id = ?, minimum = ?, updated_at = ?
-      WHERE id = ?
-    `).run(name.trim(), emoji || "🎯", description || "", unit_id, minimum, now, id);
+      WHERE id = ? AND user_id = ?
+    `).run(name.trim(), emoji || "🎯", description || "", unit_id, minimum, now, id, req.user.id);
 
     // Return updated habit with unit info
     const updated = db.prepare(`
@@ -145,12 +146,12 @@ router.delete("/:id", (req, res, next) => {
     const db = getDb();
     const { id } = req.params;
 
-    const existing = db.prepare("SELECT id FROM habits WHERE id = ?").get(id);
+    const existing = db.prepare("SELECT id FROM habits WHERE id = ? AND user_id = ?").get(id, req.user.id);
     if (!existing) {
       throw createError(404, "Hábito no encontrado");
     }
 
-    db.prepare("DELETE FROM habits WHERE id = ?").run(id);
+    db.prepare("DELETE FROM habits WHERE id = ? AND user_id = ?").run(id, req.user.id);
 
     res.status(204).end();
   } catch (err) {
