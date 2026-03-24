@@ -59,6 +59,8 @@ router.put("/:id", (req, res, next) => {
       if (habit_id !== undefined) {
         updates.push("habit_id = ?");
         params.push(habit_id);
+        // Reset sync cursor so next sync fetches full history for the new habit
+        updates.push("last_sync_at = NULL");
       }
       if (config !== undefined) {
         updates.push("config = ?");
