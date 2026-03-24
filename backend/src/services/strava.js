@@ -224,7 +224,7 @@ async function syncActivities(habitId) {
   // Group activities by date — sum minutes (moving_time is in seconds)
   const byDate = {};
   for (const activity of activities) {
-    const dateKey = activity.start_date.split("T")[0];
+    const dateKey = (activity.start_date_local || activity.start_date).split("T")[0];
     const minutes = Math.round((activity.moving_time || 0) / 60);
     byDate[dateKey] = (byDate[dateKey] || 0) + minutes;
   }
