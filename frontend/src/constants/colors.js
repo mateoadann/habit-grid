@@ -10,10 +10,10 @@ const COLORS = {
 // Red palette for quit-habit relapse intensity
 const RED_COLORS = {
   empty: "rgba(255,255,255,0.04)",
-  r1: "#4a1419",
-  r2: "#8b2029",
-  r3: "#d1343e",
-  r4: "#ff4d58",
+  r1: "#8b2029",
+  r2: "#d1343e",
+  r3: "#ff4d58",
+  r4: "#ff6b73",
 };
 
 /**

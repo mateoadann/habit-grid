@@ -306,15 +306,15 @@ function ContributionGrid({ habit, contributions, onToggle, selectedDate, onSele
             const rectY = topPad + dow * (cellSize + gap);
 
             let fillColor;
-            if (isFuture || isBeforeCreation) {
+            if (isFuture) {
               fillColor = "rgba(255,255,255,0.015)";
             } else if (isQuit) {
               if (count > 0) {
-                // Relapse day — red intensity by count quartile
-                const relapseLevel = getLevel(count, 1, maxCount);
+                const relapseLevel = getLevel(count, 1, maxCount) || 1;
                 fillColor = getQuitColor(relapseLevel);
+              } else if (isBeforeCreation) {
+                fillColor = "rgba(255,255,255,0.015)";
               } else {
-                // Clean day — green intensity by streak length at this date
                 const streak = getStreakAtDate(day, contributions, createdAt);
                 fillColor = getColor(streakToLevel(streak));
               }
@@ -475,7 +475,7 @@ function HabitCard({ habit, contributions, onLog, onEdit, onDelete, isMobile }) 
             {habit.description}
           </p>
         )}
-        {habit.minimum > 0 && (
+        {!isQuit && habit.minimum > 0 && (
           <p style={{ margin: "2px 0 10px 32px", fontSize: 11, color: "rgba(255,255,255,0.25)", fontFamily: "'JetBrains Mono', monospace" }}>
             {"Min: " + habit.minimum + " " + unitAbbr}
           </p>
@@ -529,7 +529,7 @@ function HabitCard({ habit, contributions, onLog, onEdit, onDelete, isMobile }) 
                   fontFamily: "'JetBrains Mono', monospace",
                   fontSize: 16,
                   fontWeight: 700,
-                  color: activeDateCount > 0 ? COLORS.l4 : "rgba(255,255,255,0.3)",
+                  color: activeDateCount > 0 ? (isQuit ? "#ff4d58" : COLORS.l4) : "rgba(255,255,255,0.3)",
                   minWidth: 24,
                   textAlign: "center",
                 }}>{activeDateCount}</span>
@@ -538,7 +538,7 @@ function HabitCard({ habit, contributions, onLog, onEdit, onDelete, isMobile }) 
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <span style={{ fontSize: 8, color: "rgba(255,255,255,0.25)", fontFamily: "'JetBrains Mono', monospace" }}>Menos</span>
                 {[0,1,2,3,4].map(l => (
-                  <div key={l} style={{ width: 11, height: 11, borderRadius: 2, background: getColor(l) }} />
+                  <div key={l} style={{ width: 11, height: 11, borderRadius: 2, background: isQuit ? getQuitColor(l) : getColor(l) }} />
                 ))}
                 <span style={{ fontSize: 8, color: "rgba(255,255,255,0.25)", fontFamily: "'JetBrains Mono', monospace" }}>M{"\u00e1"}s</span>
               </div>
@@ -583,7 +583,7 @@ function HabitCard({ habit, contributions, onLog, onEdit, onDelete, isMobile }) 
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 12, justifyContent: "flex-end" }}>
             <span style={{ fontSize: 8, color: "rgba(255,255,255,0.25)", fontFamily: "'JetBrains Mono', monospace" }}>Menos</span>
             {[0,1,2,3,4].map(l => (
-              <div key={l} style={{ width: 11, height: 11, borderRadius: 2, background: getColor(l) }} />
+              <div key={l} style={{ width: 11, height: 11, borderRadius: 2, background: isQuit ? getQuitColor(l) : getColor(l) }} />
             ))}
             <span style={{ fontSize: 8, color: "rgba(255,255,255,0.25)", fontFamily: "'JetBrains Mono', monospace" }}>M{"\u00e1"}s</span>
           </div>
