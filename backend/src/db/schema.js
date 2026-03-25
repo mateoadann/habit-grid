@@ -95,7 +95,7 @@ function createTables(db) {
 
   // Set schema version
   db.prepare(
-    "INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('version', '2')"
+    "INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('version', '3')"
   ).run();
 }
 
@@ -110,6 +110,12 @@ function runMigrations(db) {
   const integrationsColumns = db.prepare("PRAGMA table_info(integrations)").all();
   if (!integrationsColumns.find((c) => c.name === "user_id")) {
     db.exec("ALTER TABLE integrations ADD COLUMN user_id TEXT REFERENCES users(id)");
+  }
+
+  // Migration: add type to habits if missing (v3)
+  const habitsColumnsV3 = db.prepare("PRAGMA table_info(habits)").all();
+  if (!habitsColumnsV3.find((c) => c.name === "type")) {
+    db.exec("ALTER TABLE habits ADD COLUMN type TEXT NOT NULL DEFAULT 'positive'");
   }
 }
 

@@ -6,7 +6,7 @@ import { getContributions, logContribution } from "./services/contributionApi.js
 import { getAllUnits, createUnit, deleteUnit } from "./services/unitApi.js";
 import { getIntegrations, updateIntegration } from "./services/integrationApi.js";
 import { syncStrava, syncGitHub } from "./services/syncApi.js";
-import { COLORS, getColor } from "./constants/colors.js";
+import { COLORS, getColor, getQuitColor } from "./constants/colors.js";
 import { EMOJI_OPTIONS, DAYS_LABELS, MONTHS } from "./constants/defaults.js";
 import {
   smallBtn,
@@ -180,6 +180,39 @@ function sumContributionsByDate(contribArray) {
   return result;
 }
 
+/**
+ * Computes the consecutive clean-day streak ending at `date` (walking backward).
+ * A clean day is one where contributions[key] is 0 or undefined.
+ * Only counts days >= createdAt (if provided).
+ */
+function getStreakAtDate(date, contributions, createdAt) {
+  let streak = 0;
+  const d = new Date(date);
+  d.setHours(0,0,0,0);
+  const createdDate = createdAt ? new Date(createdAt) : null;
+  if (createdDate) createdDate.setHours(0,0,0,0);
+  while (true) {
+    if (createdDate && d < createdDate) break;
+    const key = getDateKey(d);
+    if (contributions[key] && contributions[key] > 0) break;
+    streak++;
+    d.setDate(d.getDate() - 1);
+    if (streak > 365) break;
+  }
+  return streak;
+}
+
+/**
+ * Maps a clean-day streak length to a green intensity level (1-4).
+ */
+function streakToLevel(streak) {
+  if (streak === 0) return 0;
+  if (streak <= 7) return 1;
+  if (streak <= 14) return 2;
+  if (streak <= 30) return 3;
+  return 4;
+}
+
 function ContributionGrid({ habit, contributions, onToggle, selectedDate, onSelectDate, isMobile }) {
   const mobileWeeks = (() => {
     const threeMonthsAgo = new Date();
@@ -207,6 +240,10 @@ function ContributionGrid({ habit, contributions, onToggle, selectedDate, onSele
     return () => window.removeEventListener("scroll", hide, true);
   }, [tooltip.visible]);
 
+  const isQuit = habit.type === "quit";
+  const createdAt = habit.created_at || null;
+  const createdDate = createdAt ? (() => { const cd = new Date(createdAt); cd.setHours(0,0,0,0); return cd; })() : null;
+
   const maxCount = days.reduce((m, day) => {
     const count = contributions[getDateKey(day)] || 0;
     return count > m ? count : m;
@@ -215,6 +252,11 @@ function ContributionGrid({ habit, contributions, onToggle, selectedDate, onSele
   const getTooltipText = (count, day) => {
     const dd = String(day.getDate()).padStart(2, "0");
     const mm = String(day.getMonth() + 1).padStart(2, "0");
+    if (isQuit) {
+      if (count === 0) return `Sin reca\u00eddas el ${dd}/${mm}`;
+      if (count === 1) return `1 reca\u00edda el ${dd}/${mm}`;
+      return `${count} reca\u00eddas el ${dd}/${mm}`;
+    }
     if (count === 0) return `Sin contribuciones el ${dd}/${mm}`;
     if (count === 1) return `1 contribuci\u00f3n el ${dd}/${mm}`;
     return `${count} contribuciones el ${dd}/${mm}`;
@@ -255,13 +297,32 @@ function ContributionGrid({ habit, contributions, onToggle, selectedDate, onSele
           week.map((day, di) => {
             const key = getDateKey(day);
             const count = contributions[key] || 0;
-            const level = getLevel(count, habit.minimum || 1, maxCount);
             const dow = (day.getDay() + 6) % 7;
             const isToday = key === todayKey;
             const isSelected = key === selectedDate;
             const isFuture = day > new Date();
+            const isBeforeCreation = createdDate && day < createdDate;
             const rectX = leftPad + wi * (cellSize + gap);
             const rectY = topPad + dow * (cellSize + gap);
+
+            let fillColor;
+            if (isFuture || isBeforeCreation) {
+              fillColor = "rgba(255,255,255,0.015)";
+            } else if (isQuit) {
+              if (count > 0) {
+                // Relapse day — red intensity by count quartile
+                const relapseLevel = getLevel(count, 1, maxCount);
+                fillColor = getQuitColor(relapseLevel);
+              } else {
+                // Clean day — green intensity by streak length at this date
+                const streak = getStreakAtDate(day, contributions, createdAt);
+                fillColor = getColor(streakToLevel(streak));
+              }
+            } else {
+              const level = getLevel(count, habit.minimum || 1, maxCount);
+              fillColor = getColor(level);
+            }
+
             return (
               <rect
                 key={key}
@@ -270,7 +331,7 @@ function ContributionGrid({ habit, contributions, onToggle, selectedDate, onSele
                 width={cellSize}
                 height={cellSize}
                 rx={2.5}
-                fill={isFuture ? "rgba(255,255,255,0.015)" : getColor(level)}
+                fill={fillColor}
                 stroke={isSelected ? "#58a6ff" : isToday ? "rgba(255,255,255,0.3)" : "none"}
                 strokeWidth={isSelected ? 2 : isToday ? 1.5 : 0}
                 style={{ cursor: isFuture ? "default" : "pointer", transition: "fill 0.15s" }}
@@ -335,6 +396,7 @@ function HabitCard({ habit, contributions, onLog, onEdit, onDelete, isMobile }) 
   const todayKey = getDateKey(new Date());
   const todayCount = contributions[todayKey] || 0;
   const totalCount = Object.values(contributions).reduce((a, b) => a + b, 0);
+  const isQuit = habit.type === "quit";
 
   const unitAbbr = habit.unit_abbreviation || "vec";
 
@@ -344,12 +406,23 @@ function HabitCard({ habit, contributions, onLog, onEdit, onDelete, isMobile }) 
     let streak = 0;
     const d = new Date();
     d.setHours(0,0,0,0);
-    while (true) {
-      const key = getDateKey(d);
-      if (contributions[key] && contributions[key] >= habitMinimum) {
+    if (isQuit) {
+      const createdDate = new Date(habit.created_at);
+      createdDate.setHours(0,0,0,0);
+      while (d >= createdDate) {
+        const key = getDateKey(d);
+        if (contributions[key] && contributions[key] > 0) break;
         streak++;
         d.setDate(d.getDate() - 1);
-      } else break;
+      }
+    } else {
+      while (true) {
+        const key = getDateKey(d);
+        if (contributions[key] && contributions[key] >= habitMinimum) {
+          streak++;
+          d.setDate(d.getDate() - 1);
+        } else break;
+      }
     }
     return streak;
   })();
@@ -392,7 +465,7 @@ function HabitCard({ habit, contributions, onLog, onEdit, onDelete, isMobile }) 
       {isMobile && collapsed && (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8, marginTop: -8, fontSize: 11, fontFamily: "'JetBrains Mono', monospace", color: "rgba(255,255,255,0.35)" }}>
           {currentStreak > 0 && <span>{"\uD83D\uDD25"} {currentStreak}d</span>}
-          <span style={{ color: todayCount > 0 ? COLORS.l4 : "rgba(255,255,255,0.25)" }}>{todayCount} {unitAbbr} hoy</span>
+          <span style={{ color: isQuit ? (todayCount === 0 ? COLORS.l4 : "#ff4d58") : (todayCount > 0 ? COLORS.l4 : "rgba(255,255,255,0.25)") }}>{isQuit ? (todayCount === 0 ? "Limpio" : todayCount + " hoy") : todayCount + " " + unitAbbr + " hoy"}</span>
         </div>
       )}
 
@@ -418,9 +491,14 @@ function HabitCard({ habit, contributions, onLog, onEdit, onDelete, isMobile }) 
 
         <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", justifyContent: "space-between", alignItems: isMobile ? "stretch" : "center", gap: isMobile ? 12 : 0, marginTop: 14 }}>
           <div style={{ display: "flex", gap: 20, justifyContent: isMobile ? "space-around" : "flex-start" }}>
-            <Stat label="Hoy" value={todayCount + " " + unitAbbr} accent={todayCount > 0} />
+            <Stat
+              label="Hoy"
+              value={isQuit ? (todayCount === 0 ? "Limpio" : todayCount + " " + unitAbbr) : todayCount + " " + unitAbbr}
+              accent={isQuit ? todayCount === 0 : todayCount > 0}
+              accentColor={isQuit ? (todayCount === 0 ? COLORS.l4 : "#ff4d58") : undefined}
+            />
             <Stat label="Racha" value={`${currentStreak}d`} accent={currentStreak >= 7} />
-            <Stat label="Total" value={totalCount + " " + unitAbbr} />
+            <Stat label="Total" value={isQuit ? (totalCount + " reca\u00eddas") : totalCount + " " + unitAbbr} />
           </div>
           {isMobile ? (<>
             <div style={{ textAlign: "center", marginBottom: 4 }}>
@@ -515,14 +593,14 @@ function HabitCard({ habit, contributions, onLog, onEdit, onDelete, isMobile }) 
   );
 }
 
-function Stat({ label, value, accent }) {
+function Stat({ label, value, accent, accentColor }) {
   return (
     <div>
       <div style={{
         fontSize: 18,
         fontWeight: 700,
         fontFamily: "'JetBrains Mono', monospace",
-        color: accent ? COLORS.l4 : "#e6edf3",
+        color: accent ? (accentColor || COLORS.l4) : "#e6edf3",
       }}>{value}</div>
       <div style={{ fontSize: 11, color: "rgba(255,255,255,0.3)", fontFamily: "'DM Sans', sans-serif", marginTop: 1 }}>{label}</div>
     </div>
@@ -533,21 +611,24 @@ function HabitModal({ habit, units, onSave, onClose }) {
   const [name, setName] = useState(habit?.name || "");
   const [emoji, setEmoji] = useState(habit?.emoji || "\uD83C\uDFAF");
   const [description, setDescription] = useState(habit?.description || "");
+  const [type, setType] = useState(habit?.type || "positive");
   const [unitId, setUnitId] = useState(habit?.unit_id || (units.length > 0 ? units[0].id : ""));
   const [minimum, setMinimum] = useState(habit?.minimum || 1);
   const isEdit = !!habit?.id;
+  const isQuit = type === "quit";
 
   const handleSubmit = () => {
     if (!name.trim()) return;
-    if (!unitId) return;
-    if (!minimum || minimum <= 0) return;
+    if (!isQuit && !unitId) return;
+    if (!isQuit && (!minimum || minimum <= 0)) return;
     onSave({
       id: habit?.id || null,
       name: name.trim(),
       emoji,
       description: description.trim(),
-      unit_id: Number(unitId),
-      minimum: Number(minimum),
+      unit_id: Number(unitId || (units.length > 0 ? units[0].id : 1)),
+      minimum: isQuit ? 1 : Number(minimum),
+      type,
     });
   };
 
@@ -563,6 +644,44 @@ function HabitModal({ habit, units, onSave, onClose }) {
         }}>
           {isEdit ? "Editar h\u00e1bito" : "Nuevo h\u00e1bito"}
         </h2>
+
+        <label style={labelStyle}>Tipo</label>
+        <div style={{
+          display: "flex",
+          marginBottom: 16,
+          borderRadius: 8,
+          overflow: "hidden",
+          border: "1px solid rgba(255,255,255,0.08)",
+        }}>
+          {[
+            { value: "positive", label: "Construir" },
+            { value: "quit", label: "Dejar" },
+          ].map(opt => (
+            <button
+              key={opt.value}
+              onClick={() => !isEdit && setType(opt.value)}
+              style={{
+                flex: 1,
+                padding: "8px 0",
+                fontSize: 13,
+                fontWeight: 600,
+                fontFamily: "'DM Sans', sans-serif",
+                border: "none",
+                cursor: isEdit ? "default" : "pointer",
+                opacity: isEdit && type !== opt.value ? 0.4 : 1,
+                background: type === opt.value
+                  ? (opt.value === "quit" ? "rgba(255,77,88,0.15)" : "rgba(57,211,83,0.15)")
+                  : "rgba(255,255,255,0.03)",
+                color: type === opt.value
+                  ? (opt.value === "quit" ? "#ff4d58" : COLORS.l4)
+                  : "rgba(255,255,255,0.4)",
+                transition: "all 0.15s",
+              }}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
 
         <label style={labelStyle}>Emoji</label>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 16 }}>
@@ -597,29 +716,33 @@ function HabitModal({ habit, units, onSave, onClose }) {
           style={inputStyle}
         />
 
-        <label style={labelStyle}>Unidad de medida</label>
-        <select
-          value={unitId}
-          onChange={e => setUnitId(e.target.value)}
-          style={{ ...inputStyle, appearance: "auto" }}
-        >
-          {units.map(u => (
-            <option key={u.id} value={u.id}>
-              {u.name} ({u.abbreviation})
-            </option>
-          ))}
-        </select>
+        {!isQuit && (
+          <>
+            <label style={labelStyle}>Unidad de medida</label>
+            <select
+              value={unitId}
+              onChange={e => setUnitId(e.target.value)}
+              style={{ ...inputStyle, appearance: "auto" }}
+            >
+              {units.map(u => (
+                <option key={u.id} value={u.id}>
+                  {u.name} ({u.abbreviation})
+                </option>
+              ))}
+            </select>
 
-        <label style={labelStyle}>{"M\u00ednimo diario"}</label>
-        <input
-          type="number"
-          value={minimum}
-          onChange={e => setMinimum(e.target.value)}
-          min="1"
-          step="1"
-          placeholder="ej: 30"
-          style={inputStyle}
-        />
+            <label style={labelStyle}>{"M\u00ednimo diario"}</label>
+            <input
+              type="number"
+              value={minimum}
+              onChange={e => setMinimum(e.target.value)}
+              min="1"
+              step="1"
+              placeholder="ej: 30"
+              style={inputStyle}
+            />
+          </>
+        )}
 
         <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
           <button onClick={onClose} style={cancelBtn}>Cancelar</button>
@@ -685,6 +808,7 @@ function IntegrationCard({ integration, type, habits, syncing, onSync, onLinkHab
   const isConnected = integration && integration.status === "connected";
   const isSyncing = syncing[type] || false;
   const linkedHabitId = integration?.habit_id || "";
+  const linkableHabits = habits.filter(h => h.type !== "quit");
 
   const handleConnect = () => {
     const baseUrl = import.meta.env.VITE_API_URL || "/api";
@@ -736,7 +860,7 @@ function IntegrationCard({ integration, type, habits, syncing, onSync, onLinkHab
               }}
             >
               <option value="">Sin vincular</option>
-              {habits.map(h => (
+              {linkableHabits.map(h => (
                 <option key={h.id} value={h.id}>
                   {h.emoji} {h.name}
                 </option>
@@ -1094,7 +1218,7 @@ function HabitTracker() {
   const handleSaveHabit = async (habitData) => {
     try {
       if (habitData.id) {
-        // Editing existing habit
+        // Editing existing habit (type is immutable after creation, not sent on update)
         const updated = await updateHabit(habitData.id, {
           name: habitData.name,
           emoji: habitData.emoji,
@@ -1111,6 +1235,7 @@ function HabitTracker() {
           description: habitData.description,
           unit_id: habitData.unit_id,
           minimum: habitData.minimum,
+          type: habitData.type,
         });
         setHabits(prev => [...prev, created]);
         setContributions(prev => ({ ...prev, [created.id]: {} }));
@@ -1193,7 +1318,10 @@ function HabitTracker() {
   }
 
   const todayKey = getDateKey(new Date());
-  const habitsCompletedToday = habits.filter(h => (contributions[h.id]?.[todayKey] || 0) >= (h.minimum || 1)).length;
+  const habitsCompletedToday = habits.filter(h => {
+    const count = contributions[h.id]?.[todayKey] || 0;
+    return h.type === "quit" ? count === 0 : count >= (h.minimum || 1);
+  }).length;
 
   return (
     <div style={{

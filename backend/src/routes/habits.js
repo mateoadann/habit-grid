@@ -47,7 +47,7 @@ router.get("/:id", (req, res, next) => {
 router.post("/", (req, res, next) => {
   try {
     const db = getDb();
-    const { name, emoji, description, unit_id, minimum } = req.body;
+    const { name, emoji, description, unit_id, minimum, type } = req.body;
 
     // Validation
     if (!name || !name.trim()) {
@@ -60,6 +60,12 @@ router.post("/", (req, res, next) => {
       throw createError(400, "El mínimo debe ser mayor a 0");
     }
 
+    const VALID_TYPES = ["positive", "quit"];
+    const habitType = type || "positive";
+    if (!VALID_TYPES.includes(habitType)) {
+      throw createError(400, "Tipo de hábito inválido");
+    }
+
     // Verify unit exists
     const unit = db.prepare("SELECT id FROM units WHERE id = ?").get(unit_id);
     if (!unit) {
@@ -70,9 +76,9 @@ router.post("/", (req, res, next) => {
     const now = new Date().toISOString();
 
     db.prepare(`
-      INSERT INTO habits (id, name, emoji, description, unit_id, minimum, user_id, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, name.trim(), emoji || "🎯", description || "", unit_id, minimum, req.user.id, now, now);
+      INSERT INTO habits (id, name, emoji, description, unit_id, minimum, type, user_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, name.trim(), emoji || "🎯", description || "", unit_id, minimum, habitType, req.user.id, now, now);
 
     // Return created habit with unit info
     const created = db.prepare(`
@@ -93,7 +99,7 @@ router.put("/:id", (req, res, next) => {
   try {
     const db = getDb();
     const { id } = req.params;
-    const { name, emoji, description, unit_id, minimum } = req.body;
+    const { name, emoji, description, unit_id, minimum, type } = req.body;
 
     // Check habit exists
     const existing = db.prepare("SELECT id FROM habits WHERE id = ? AND user_id = ?").get(id, req.user.id);
@@ -112,6 +118,12 @@ router.put("/:id", (req, res, next) => {
       throw createError(400, "El mínimo debe ser mayor a 0");
     }
 
+    const VALID_TYPES = ["positive", "quit"];
+    const habitType = type || "positive";
+    if (!VALID_TYPES.includes(habitType)) {
+      throw createError(400, "Tipo de hábito inválido");
+    }
+
     // Verify unit exists
     const unit = db.prepare("SELECT id FROM units WHERE id = ?").get(unit_id);
     if (!unit) {
@@ -122,9 +134,9 @@ router.put("/:id", (req, res, next) => {
 
     db.prepare(`
       UPDATE habits
-      SET name = ?, emoji = ?, description = ?, unit_id = ?, minimum = ?, updated_at = ?
+      SET name = ?, emoji = ?, description = ?, unit_id = ?, minimum = ?, type = ?, updated_at = ?
       WHERE id = ? AND user_id = ?
-    `).run(name.trim(), emoji || "🎯", description || "", unit_id, minimum, now, id, req.user.id);
+    `).run(name.trim(), emoji || "🎯", description || "", unit_id, minimum, habitType, now, id, req.user.id);
 
     // Return updated habit with unit info
     const updated = db.prepare(`
