@@ -35,9 +35,12 @@ router.put("/:id", (req, res, next) => {
 
     // Validate habit_id if provided (before any DB write)
     if (habit_id) {
-      const habit = db.prepare("SELECT id FROM habits WHERE id = ? AND user_id = ?").get(habit_id, req.user.id);
+      const habit = db.prepare("SELECT id, type FROM habits WHERE id = ? AND user_id = ?").get(habit_id, req.user.id);
       if (!habit) {
         throw createError(400, "El hábito especificado no existe");
+      }
+      if (habit.type === "quit") {
+        throw createError(400, "No se pueden vincular integraciones a hábitos para dejar");
       }
     }
 

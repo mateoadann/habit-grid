@@ -8,8 +8,8 @@ async function getHabit(id) {
   return apiGet("/habits/" + id);
 }
 
-async function createHabit({ name, emoji, description, unit_id, minimum }) {
-  return apiPost("/habits", { name, emoji, description, unit_id, minimum });
+async function createHabit({ name, emoji, description, unit_id, minimum, type }) {
+  return apiPost("/habits", { name, emoji, description, unit_id, minimum, type });
 }
 
 async function updateHabit(id, data) {
