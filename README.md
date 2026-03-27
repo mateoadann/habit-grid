@@ -1,68 +1,117 @@
 # habit.grid 🟩
 
-A GitHub-style contribution grid habit tracker. Track your daily habits and watch your grid turn green.
+A full-stack habit tracker with GitHub-style contribution grids. Track daily habits, connect external services, and visualize your progress.
 
 ## Features
 
-- **CRUD** — Create, edit, and delete habits with emoji + name + description
-- **Contribution grid** — GitHub-style heatmap per habit (20 weeks)
-- **Intensity levels** — More repetitions = greener squares (4 levels)
-- **Date selection** — Click any square to log past dates
+- **Contribution grid** — GitHub-style heatmap per habit (20 weeks, 4 intensity levels)
+- **Habit types** — Positive habits (track goals) and quit habits (track days clean)
 - **Streak tracking** — Current streak, daily count, total contributions
-- **Persistent** — Data saved in localStorage
+- **Strava integration** — Auto-sync fitness activities via OAuth 2.0 + webhooks
+- **GitHub integration** — Sync your GitHub contribution history
+- **Custom units** — Predefined (minutes, km, pages) or create your own
+- **Authentication** — JWT-based single-user auth with httpOnly cookies
+- **Date selection** — Click any grid square to log past dates
+
+## Tech stack
+
+| Layer | Tech |
+|-------|------|
+| Frontend | React 18, Vite |
+| Backend | Express, better-sqlite3 |
+| Auth | JWT, bcrypt |
+| Deploy | Docker Compose, GitHub Actions CI/CD |
+| Database | SQLite (6 tables, auto-migrations) |
 
 ## Quick start
 
-```bash
-npm install
-npm run dev
-```
+### Prerequisites
 
-## Deploy
+- Node.js 18+
+- Docker & Docker Compose (for production)
 
-```bash
-npm run build
-```
-
-The `dist/` folder is a static site — serve it with nginx, Caddy, or any static host.
-
-### Example nginx config
-
-```nginx
-server {
-    listen 80;
-    server_name habits.yourdomain.com;
-    root /var/www/habit-grid/dist;
-    index index.html;
-
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-}
-```
-
-### Deploy steps (VPS)
+### Local development
 
 ```bash
-# On your local machine
-npm run build
-scp -r dist/* user@your-vps:/var/www/habit-grid/dist/
-
-# Or push to GitHub and pull from your VPS
-git add .
-git commit -m "initial commit"
-git push origin main
-
-# On your VPS
-cd /var/www/habit-grid
-git pull
-npm install
-npm run build
+make setup       # install deps + configure git hooks
+make dev         # start backend + frontend in dev mode
 ```
 
-## Tech
+### Docker (production)
 
-- React 18 + Vite
-- Zero dependencies beyond React
-- ~500 lines of code
-- localStorage for persistence
+```bash
+# Configure environment
+cp backend/.env.example backend/.env
+# Edit backend/.env with your secrets
+
+# Create a user and start
+make up
+make create-user U=youruser P=yourpassword
+```
+
+## Environment variables
+
+The backend requires a `.env` file in `backend/`. Copy `.env.example` and fill in:
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `JWT_SECRET` | Yes | Secret for signing auth tokens |
+| `STRAVA_CLIENT_ID` | No | From apps.strava.com |
+| `STRAVA_CLIENT_SECRET` | No | From apps.strava.com |
+| `STRAVA_VERIFY_TOKEN` | No | Custom token for webhook validation |
+| `GITHUB_TOKEN` | No | Personal access token for GitHub sync |
+| `GITHUB_USERNAME` | No | GitHub username to fetch contributions |
+| `API_URL` | No | Backend URL (for OAuth callbacks) |
+| `FRONTEND_URL` | No | Frontend URL (for OAuth redirects) |
+
+## Makefile commands
+
+```bash
+make up              # start containers
+make down            # stop containers
+make restart         # rebuild + restart
+make test            # run all tests
+make test-backend    # backend tests only
+make test-frontend   # frontend tests only
+make logs            # tail all logs
+make health          # check backend health
+make seed            # populate dev data
+make create-user U=x P=y  # create a user
+make clean           # remove containers + images
+```
+
+## Project structure
+
+```
+habit-grid/
+├── frontend/          # React + Vite SPA
+│   ├── src/
+│   │   ├── App.jsx            # Main UI + grid rendering
+│   │   ├── components/        # Login
+│   │   ├── services/          # API clients (habits, contributions, units, integrations, sync)
+│   │   ├── contexts/          # AuthContext
+│   │   └── constants/         # Colors, styles, defaults
+│   ├── Dockerfile             # Multi-stage: build → nginx
+│   └── nginx.conf
+├── backend/           # Express API
+│   ├── src/
+│   │   ├── app.js             # Route setup
+│   │   ├── db/                # SQLite connection + schema migrations
+│   │   ├── routes/            # auth, habits, contributions, units, integrations, sync, webhooks, import
+│   │   ├── services/          # Strava OAuth + sync, GitHub GraphQL
+│   │   ├── middleware/        # JWT auth, error handler
+│   │   └── scripts/           # create-user, seed
+│   └── Dockerfile             # Multi-stage: native deps → runtime
+├── docker-compose.yml
+├── .github/workflows/deploy.yml  # CI: test → deploy → health check → auto-rollback
+└── Makefile
+```
+
+## CI/CD
+
+On push to `main`, GitHub Actions:
+
+1. Runs backend + frontend tests (Vitest)
+2. SSH deploys to VPS
+3. Rebuilds Docker containers
+4. Health check — auto-rollback on failure
