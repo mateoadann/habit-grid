@@ -1,0 +1,11 @@
+habit.adain.dev {
+    # Reverse proxy API requests to backend
+    handle /api/* {
+        reverse_proxy backend:3001
+    }
+
+    # Everything else goes to frontend (nginx serving React SPA)
+    handle {
+        reverse_proxy frontend:80
+    }
+}

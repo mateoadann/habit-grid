@@ -212,6 +212,17 @@ const statusBadgeDisconnected = {
   fontFamily: "'JetBrains Mono', monospace",
 };
 
+const statusBadgeError = {
+  display: "inline-block",
+  padding: "2px 8px",
+  borderRadius: 12,
+  background: "#da3633",
+  color: "#fff",
+  fontSize: 12,
+  fontWeight: 500,
+  fontFamily: "'JetBrains Mono', monospace",
+};
+
 const syncButton = {
   padding: "6px 14px",
   borderRadius: 6,
@@ -304,6 +315,7 @@ export {
   integrationCard,
   statusBadgeConnected,
   statusBadgeDisconnected,
+  statusBadgeError,
   syncButton,
   connectButton,
   unitRow,
