@@ -27,6 +27,7 @@ import {
   integrationCard,
   statusBadgeConnected,
   statusBadgeDisconnected,
+  statusBadgeError,
   syncButton,
   connectButton,
   unitRow,
@@ -806,6 +807,7 @@ function Toast({ message, type, onDismiss }) {
 function IntegrationCard({ integration, type, habits, syncing, onSync, onLinkHabit }) {
   const isStrava = type === "strava";
   const isConnected = integration && integration.status === "connected";
+  const isError = integration && integration.status === "error";
   const isSyncing = syncing[type] || false;
   const linkedHabitId = integration?.habit_id || "";
   const linkableHabits = habits.filter(h => h.type !== "quit");
@@ -815,8 +817,8 @@ function IntegrationCard({ integration, type, habits, syncing, onSync, onLinkHab
     window.location.href = baseUrl + "/auth/strava";
   };
 
-  const lastSync = integration?.last_synced_at
-    ? new Date(integration.last_synced_at).toLocaleDateString("es-AR", {
+  const lastSync = integration?.last_sync_at
+    ? new Date(integration.last_sync_at).toLocaleDateString("es-AR", {
         day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
       })
     : null;
@@ -832,6 +834,8 @@ function IntegrationCard({ integration, type, habits, syncing, onSync, onLinkHab
         </div>
         {isConnected ? (
           <span style={statusBadgeConnected}>Conectado</span>
+        ) : isError ? (
+          <span style={statusBadgeError}>Error</span>
         ) : (
           <span style={statusBadgeDisconnected}>Desconectado</span>
         )}
@@ -1159,8 +1163,11 @@ function HabitTracker() {
   const handleSyncStrava = async () => {
     setSyncing(s => ({ ...s, strava: true }));
     try {
-      await syncStrava();
-      setToast({ message: "Strava sincronizado correctamente", type: "success" });
+      const result = await syncStrava();
+      const msg = result.activities > 0
+        ? `Sincronizado: ${result.activities} actividad${result.activities !== 1 ? "es" : ""}, ${result.totalMinutes} min`
+        : "Sin actividades nuevas";
+      setToast({ message: msg, type: "success" });
       await refreshData();
     } catch (err) {
       setToast({ message: err.message || "Error al sincronizar Strava", type: "error" });

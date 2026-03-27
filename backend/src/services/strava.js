@@ -80,9 +80,9 @@ async function exchangeCodeForTokens(code) {
  * Checks if the Strava access token is expired, refreshes if needed.
  * Returns a valid access_token.
  */
-async function refreshTokenIfNeeded() {
+async function refreshTokenIfNeeded(userId) {
   const db = getDb();
-  const integration = db.prepare("SELECT * FROM integrations WHERE id = 'strava'").get();
+  const integration = db.prepare("SELECT * FROM integrations WHERE id = 'strava' AND user_id = ?").get(userId);
 
   if (!integration) {
     throw new Error("Integración de Strava no encontrada. Conectá tu cuenta primero");
@@ -117,8 +117,8 @@ async function refreshTokenIfNeeded() {
   if (!response.ok) {
     const errorBody = await response.text();
     db.prepare(`
-      UPDATE integrations SET status = 'error', updated_at = ? WHERE id = 'strava'
-    `).run(new Date().toISOString());
+      UPDATE integrations SET status = 'error', updated_at = ? WHERE id = 'strava' AND user_id = ?
+    `).run(new Date().toISOString(), userId);
     throw new Error(`Error al renovar token de Strava: ${response.status} — ${errorBody}`);
   }
 
@@ -129,8 +129,8 @@ async function refreshTokenIfNeeded() {
   db.prepare(`
     UPDATE integrations
     SET access_token = ?, refresh_token = ?, expires_at = ?, status = 'connected', updated_at = ?
-    WHERE id = 'strava'
-  `).run(access_token, refresh_token, expires_at, new Date().toISOString());
+    WHERE id = 'strava' AND user_id = ?
+  `).run(access_token, refresh_token, expires_at, new Date().toISOString(), userId);
 
   return access_token;
 }
@@ -186,7 +186,7 @@ async function fetchActivities(accessToken, after, before) {
  * @param {string} habitId - The habit to sync contributions for
  * @returns {{ synced: number }} Count of synced days
  */
-async function syncActivities(habitId) {
+async function syncActivities(habitId, userId) {
   const db = getDb();
 
   // Verify habit exists
@@ -196,19 +196,19 @@ async function syncActivities(habitId) {
   }
 
   // Get integration
-  const integration = db.prepare("SELECT * FROM integrations WHERE id = 'strava'").get();
+  const integration = db.prepare("SELECT * FROM integrations WHERE id = 'strava' AND user_id = ?").get(userId);
   if (!integration || integration.status !== "connected") {
     throw new Error("Strava no está conectado");
   }
 
   // Refresh token if needed
-  const accessToken = await refreshTokenIfNeeded();
+  const accessToken = await refreshTokenIfNeeded(userId);
 
   // Calculate fetch range
   let after;
   if (integration.last_sync_at) {
-    // Sync since last sync (convert ISO to Unix timestamp)
-    after = Math.floor(new Date(integration.last_sync_at).getTime() / 1000);
+    // Sync since last sync minus 2h buffer to catch delayed uploads
+    after = Math.floor(new Date(integration.last_sync_at).getTime() / 1000) - 7200;
   } else {
     // First sync: last 30 days
     const thirtyDaysAgo = new Date();
@@ -247,10 +247,14 @@ async function syncActivities(habitId) {
 
   // Update last_sync_at
   db.prepare(`
-    UPDATE integrations SET last_sync_at = ?, updated_at = ? WHERE id = 'strava'
-  `).run(new Date().toISOString(), new Date().toISOString());
+    UPDATE integrations SET last_sync_at = ?, updated_at = ? WHERE id = 'strava' AND user_id = ?
+  `).run(new Date().toISOString(), new Date().toISOString(), userId);
 
-  return { synced: Object.keys(byDate).length };
+  const totalMinutes = activities.reduce((sum, a) => sum + Math.round((a.moving_time || 0) / 60), 0);
+  const dates = Object.keys(byDate).sort();
+  const dateRange = dates.length > 0 ? { from: dates[0], to: dates[dates.length - 1] } : null;
+
+  return { synced: dates.length, activities: activities.length, totalMinutes, dateRange };
 }
 
 export {

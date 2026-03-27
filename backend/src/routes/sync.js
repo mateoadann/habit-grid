@@ -12,7 +12,7 @@ router.post("/strava", async (req, res, next) => {
     const db = getDb();
 
     // Get strava integration and verify it's connected
-    const integration = db.prepare("SELECT * FROM integrations WHERE id = 'strava'").get();
+    const integration = db.prepare("SELECT * FROM integrations WHERE id = 'strava' AND user_id = ?").get(req.user.id);
     if (!integration || integration.status !== "connected") {
       throw createError(400, "Strava no está conectado");
     }
@@ -21,7 +21,7 @@ router.post("/strava", async (req, res, next) => {
       throw createError(400, "Strava no tiene un hábito vinculado. Configurá la integración primero");
     }
 
-    const result = await syncActivities(integration.habit_id);
+    const result = await syncActivities(integration.habit_id, req.user.id);
 
     res.json({ success: true, ...result });
   } catch (err) {
@@ -40,7 +40,7 @@ router.post("/github", async (req, res, next) => {
     }
 
     // Get github integration to find linked habit
-    const integration = db.prepare("SELECT * FROM integrations WHERE id = 'github'").get();
+    const integration = db.prepare("SELECT * FROM integrations WHERE id = 'github' AND user_id = ?").get(req.user.id);
 
     if (!integration?.habit_id) {
       throw createError(400, "GitHub no tiene un hábito vinculado. Configurá la integración primero");
@@ -51,8 +51,8 @@ router.post("/github", async (req, res, next) => {
     // Ensure integration status is "connected" after successful sync
     db.prepare(`
       UPDATE integrations SET status = 'connected', updated_at = ?
-      WHERE id = 'github' AND status != 'connected'
-    `).run(new Date().toISOString());
+      WHERE id = 'github' AND user_id = ? AND status != 'connected'
+    `).run(new Date().toISOString(), req.user.id);
 
     res.json({ success: true, ...result });
   } catch (err) {
@@ -65,8 +65,8 @@ router.post("/all", async (req, res, next) => {
   try {
     const db = getDb();
     const integrations = db.prepare(
-      "SELECT id, habit_id, status FROM integrations WHERE status = 'connected'"
-    ).all();
+      "SELECT id, habit_id, status FROM integrations WHERE status = 'connected' AND user_id = ?"
+    ).all(req.user.id);
 
     const results = {};
 
@@ -78,7 +78,7 @@ router.post("/all", async (req, res, next) => {
 
       try {
         if (integration.id === "strava") {
-          results.strava = await syncActivities(integration.habit_id);
+          results.strava = await syncActivities(integration.habit_id, req.user.id);
         } else if (integration.id === "github") {
           results.github = await syncContributions(integration.habit_id);
         }
