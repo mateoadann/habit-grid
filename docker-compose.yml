@@ -3,8 +3,6 @@ services:
     build: ./backend
     container_name: habit-grid-api
     restart: unless-stopped
-    ports:
-      - "3001:3001"
     volumes:
       - sqlite-data:/app/data
     env_file:
@@ -17,6 +15,10 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 256m
 
   frontend:
     build:
@@ -25,18 +27,33 @@ services:
         VITE_API_URL: /api
     container_name: habit-grid-web
     restart: unless-stopped
-    ports:
-      - "3080:80"
     depends_on:
       backend:
         condition: service_healthy
-    networks:
-      - default
-      - npm_proxy
+    deploy:
+      resources:
+        limits:
+          memory: 64m
 
-networks:
-  npm_proxy:
-    external: true
+  caddy:
+    image: caddy:2-alpine
+    container_name: habit-grid-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+    deploy:
+      resources:
+        limits:
+          memory: 64m
 
 volumes:
   sqlite-data:
+  caddy_data:
+  caddy_config:
